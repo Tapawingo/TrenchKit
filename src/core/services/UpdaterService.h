@@ -4,7 +4,6 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QUrl>
-#include <QVersionNumber>
 #include <QPointer>
 #include <QFile>
 #include <QDateTime>
@@ -12,6 +11,23 @@
 class UpdaterService final : public QObject {
     Q_OBJECT
 public:
+    // Semantic version per https://semver.org spec items 9 and 11.
+    struct SemVer {
+        int major = 0;
+        int minor = 0;
+        int patch = 0;
+        QString preRelease; // e.g. "alpha", "rc.1", "beta.2" — empty for stable releases
+
+        bool isNull() const { return major == 0 && minor == 0 && patch == 0 && preRelease.isEmpty(); }
+        bool isPreRelease() const { return !preRelease.isEmpty(); }
+
+        QString toString() const;
+        static SemVer fromString(const QString& s);
+
+        // Spec item 11: returns negative if a < b, 0 if equal, positive if a > b.
+        static int compare(const SemVer& a, const SemVer& b);
+    };
+
     struct Asset {
         QString name;
         QUrl downloadUrl;
@@ -29,7 +45,7 @@ public:
         bool prerelease = false;
         bool draft = false;
 
-        QVersionNumber version;
+        SemVer version;
     };
 
     explicit UpdaterService(QString owner,
@@ -43,8 +59,8 @@ public:
     void setIncludePrereleases(bool include);
     bool includePrereleases() const { return m_includePrereleases; }
 
-    QVersionNumber currentVersion() const;
-    static QVersionNumber parseVersionFromTag(const QString& tag);
+    SemVer currentVersion() const;
+    static SemVer parseVersionFromTag(const QString& tag);
 
 public slots:
     void checkForUpdates();

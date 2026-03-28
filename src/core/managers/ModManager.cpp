@@ -36,13 +36,7 @@ QString ModManager::getPaksPath() const {
     return m_foxholeInstallPath + "/War/Content/Paks";
 }
 
-bool ModManager::addMod(const QString &pakFilePath, const QString &modName,
-                        const QString &nexusModId, const QString &nexusFileId,
-                        const QString &nexusUrl,
-                        const QString &author, const QString &description,
-                        const QString &version, const QString &itchGameId,
-                        const QString &itchUrl,
-                        const QDateTime &uploadDate) {
+bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) {
     QFileInfo fileInfo(pakFilePath);
     if (!fileInfo.exists() || !fileInfo.isFile()) {
         emit errorOccurred(tr("Mod file does not exist: %1").arg(pakFilePath));
@@ -59,16 +53,16 @@ bool ModManager::addMod(const QString &pakFilePath, const QString &modName,
     ModInfo mod;
     mod.id = ModInfo::generateId();
 
-    if (!modName.isEmpty()) {
-        mod.fileName = modName + fileInfo.suffix().prepend('.');
-        mod.name = modName;
+    if (!params.name.isEmpty()) {
+        mod.fileName = params.name + fileInfo.suffix().prepend('.');
+        mod.name = params.name;
     } else {
         mod.fileName = fileInfo.fileName();
         mod.name = cleanModName(fileInfo.fileName());
     }
 
     mod.installDate = QDateTime::currentDateTime();
-    mod.uploadDate = uploadDate;
+    mod.uploadDate = params.uploadDate;
     mod.enabled = false;
 
     {
@@ -76,14 +70,14 @@ bool ModManager::addMod(const QString &pakFilePath, const QString &modName,
         mod.priority = m_mods.size();
     }
 
-    mod.nexusModId = nexusModId;
-    mod.nexusFileId = nexusFileId;
-    mod.nexusUrl = nexusUrl;
-    mod.itchGameId = itchGameId;
-    mod.itchUrl = itchUrl;
-    mod.author = author;
-    mod.description = description;
-    mod.version = version;
+    mod.nexusModId = params.nexusModId;
+    mod.nexusFileId = params.nexusFileId;
+    mod.nexusUrl = params.nexusUrl;
+    mod.itchGameId = params.itchGameId;
+    mod.itchUrl = params.itchUrl;
+    mod.author = params.author;
+    mod.description = params.description;
+    mod.version = params.version;
 
     if (hasManifest) {
         mod.manifestId = manifest.id;

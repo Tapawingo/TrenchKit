@@ -249,8 +249,18 @@ void AddModModalContent::handlePakFile(const QString &pakPath, const QString &ne
         modName = fileInfo.baseName();
     }
 
-    if (!m_modManager->addMod(normalizedPath, modName, nexusModId, nexusFileId, nexusUrl, author, description, version,
-                              itchGameId, itchUrl, uploadDate)) {
+    if (!m_modManager->addMod(normalizedPath, {
+            .name = modName,
+            .nexusModId = nexusModId,
+            .nexusFileId = nexusFileId,
+            .nexusUrl = nexusUrl,
+            .author = author,
+            .description = description,
+            .version = version,
+            .itchGameId = itchGameId,
+            .itchUrl = itchUrl,
+            .uploadDate = uploadDate
+        })) {
         MessageModal::warning(m_modalManager, tr("Error"), tr("Failed to add mod: %1").arg(modName));
     } else {
         emit modAdded(modName);

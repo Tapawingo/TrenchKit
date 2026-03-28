@@ -146,8 +146,12 @@ qt_add_executable(TrenchKit
   app.rc
 )
 
+target_compile_options(TrenchKit PRIVATE
+  $<IF:$<CXX_COMPILER_ID:MSVC>,/W4,-Wall -Wextra -Wpedantic>
+)
+
 target_compile_definitions(TrenchKit PRIVATE
-  TRENCHKIT_VERSION="${PROJECT_VERSION}"
+  TRENCHKIT_VERSION="${TRENCHKIT_FULL_VERSION}"
   LIBARCHIVE_STATIC
 )
 
