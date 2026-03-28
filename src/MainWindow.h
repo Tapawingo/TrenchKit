@@ -99,6 +99,7 @@ private:
     QFutureWatcher<bool> *m_modLoadWatcher;
     QFutureWatcher<void> *m_unregisteredModsWatcher;
     QFutureWatcher<QList<ModManager::VerificationIssue>> *m_verificationWatcher = nullptr;
+    QFutureWatcher<void> *m_syncWatcher = nullptr;
     bool m_firstShow = true;
     UpdaterService *m_updater = nullptr;
     NexusModsClient *m_nexusClient = nullptr;

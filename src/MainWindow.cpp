@@ -130,6 +130,8 @@ MainWindow::MainWindow(QWidget *parent)
             &QFutureWatcher<QList<ModManager::VerificationIssue>>::finished,
             this, &MainWindow::onVerificationComplete);
 
+    m_syncWatcher = new QFutureWatcher<void>(this);
+
     QSize windowSize(1000, 700);
     setMinimumSize(windowSize);
     setMaximumSize(windowSize);
@@ -508,16 +510,15 @@ QString MainWindow::findProfileImportPath() const {
 }
 
 void MainWindow::trySyncEnabledMods() {
-    if (!m_modManager || !m_modsLoaded || !m_installPathReady) {
-        return;
-    }
-
+    if (!m_modManager || !m_modsLoaded || !m_installPathReady) return;
+    if (m_syncWatcher->isRunning()) return;
     const QString paksPath = m_modManager->getPaksPath();
-    if (paksPath.isEmpty() || !QDir(paksPath).exists()) {
-        return;
-    }
+    if (paksPath.isEmpty() || !QDir(paksPath).exists()) return;
 
-    m_modManager->syncEnabledModsWithPaks();
+    QPointer<ModManager> mgr(m_modManager);
+    m_syncWatcher->setFuture(QtConcurrent::run([mgr]() {
+        if (mgr) mgr->syncEnabledModsWithPaks();
+    }));
 }
 
 void MainWindow::onUnregisteredModsDetectionComplete() {
