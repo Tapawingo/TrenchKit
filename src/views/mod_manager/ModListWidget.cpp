@@ -1271,7 +1271,7 @@ void ModListWidget::onFilesDropped(const QStringList &filePaths) {
 
 void ModListWidget::handlePakFile(const QString &pakPath) {
     QFileInfo fileInfo(pakPath);
-    QString modName = fileInfo.baseName();
+    QString modName = fileInfo.completeBaseName();
 
     if (!m_modManager->addMod(pakPath, {.name = modName})) {
         MessageModal::warning(m_modalManager, "Error",
