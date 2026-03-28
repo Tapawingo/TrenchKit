@@ -96,14 +96,6 @@ void TitleBar::setupConnections() {
     connect(m_closeButton, &QPushButton::clicked, this, &TitleBar::closeClicked);
 }
 
-void TitleBar::setTitle(const QString &title) {
-    Q_UNUSED(title);
-}
-
-void TitleBar::setIcon(const QIcon &icon) {
-    Q_UNUSED(icon);
-}
-
 void TitleBar::setUpdateVisible(bool visible) {
     m_updateButton->setVisible(visible);
 }

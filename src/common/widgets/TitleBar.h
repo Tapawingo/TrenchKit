@@ -15,8 +15,6 @@ public:
     explicit TitleBar(QWidget *parent = nullptr);
     ~TitleBar() override = default;
 
-    void setTitle(const QString &title);
-    void setIcon(const QIcon &icon);
     void setUpdateVisible(bool visible);
 
 signals:

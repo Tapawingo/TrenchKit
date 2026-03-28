@@ -22,10 +22,6 @@ void emitDownloadFinishedQueued(UpdaterService *service, const QString &path) {
 }
 }
 
-// ---------------------------------------------------------------------------
-// SemVer
-// ---------------------------------------------------------------------------
-
 QString UpdaterService::SemVer::toString() const {
     QString s = QStringLiteral("%1.%2.%3").arg(major).arg(minor).arg(patch);
     if (!preRelease.isEmpty()) {
@@ -141,6 +137,7 @@ QNetworkRequest UpdaterService::makeRequest(const QUrl& url) const {
     if (!m_authToken.isEmpty()) {
         req.setRawHeader("Authorization", QByteArray("Bearer ") + m_authToken.toUtf8());
     }
+    req.setTransferTimeout(30000);
     return req;
 }
 

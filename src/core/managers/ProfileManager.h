@@ -51,8 +51,8 @@ public:
     bool renameProfile(const QString &profileId, const QString &newName);
     bool deleteProfile(const QString &profileId);
     bool reorderProfiles(const QList<QString> &orderedProfileIds);
-    ProfileInfo getProfile(const QString &profileId) const;
-    QList<ProfileInfo> getProfiles() const;
+    [[nodiscard]] ProfileInfo getProfile(const QString &profileId) const;
+    [[nodiscard]] QList<ProfileInfo> getProfiles() const;
 
     ProfileValidationResult validateProfile(const QString &profileId) const;
     bool applyProfile(const QString &profileId, bool ignoreWarnings = false);

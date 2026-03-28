@@ -42,9 +42,6 @@ void ProgressModal::setupUi(const QString &labelText, const QString &cancelButto
 }
 
 void ProgressModal::changeEvent(QEvent *event) {
-    if (event->type() == QEvent::LanguageChange) {
-        // Label text and cancel button text are caller-provided; no hardcoded strings to retranslate.
-    }
     BaseModalContent::changeEvent(event);
 }
 

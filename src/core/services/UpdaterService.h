@@ -59,8 +59,8 @@ public:
     void setIncludePrereleases(bool include);
     bool includePrereleases() const { return m_includePrereleases; }
 
-    SemVer currentVersion() const;
-    static SemVer parseVersionFromTag(const QString& tag);
+    [[nodiscard]] SemVer currentVersion() const;
+    [[nodiscard]] static SemVer parseVersionFromTag(const QString& tag);
 
 public slots:
     void checkForUpdates();

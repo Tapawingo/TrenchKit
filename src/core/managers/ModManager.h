@@ -48,10 +48,10 @@ public:
     bool updateModMetadata(const ModInfo &updatedMod);
 
     // Getters
-    QList<ModInfo> getMods() const;
-    ModInfo getMod(const QString &modId) const;
-    QString getModsStoragePath() const { return m_modsStoragePath; }
-    QString getPaksPath() const;
+    [[nodiscard]] QList<ModInfo> getMods() const;
+    [[nodiscard]] ModInfo getMod(const QString &modId) const;
+    [[nodiscard]] QString getModsStoragePath() const { return m_modsStoragePath; }
+    [[nodiscard]] QString getPaksPath() const;
 
     // Persistence
     bool loadMods();
@@ -68,6 +68,8 @@ signals:
     void modAdded(const QString &modId);
     void modRemoved(const QString &modId);
     void errorOccurred(const QString &error);
+
+    static constexpr int PriorityPadWidth = 3;
 
 private:
     QString getModFilePath(const QString &modId) const;

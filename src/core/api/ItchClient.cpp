@@ -287,6 +287,7 @@ void ItchClient::cancelDownload() {
 QNetworkRequest ItchClient::makeRequest(const QUrl &url, bool useAuth) const {
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("TrenchKit/1.0.1"));
+    request.setTransferTimeout(30000);
 
     if (useAuth && !m_apiKey.isEmpty()) {
         // itch.io API uses Bearer token authentication

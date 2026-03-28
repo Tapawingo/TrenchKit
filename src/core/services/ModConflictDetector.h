@@ -37,8 +37,8 @@ public:
     explicit ModConflictDetector(ModManager *modManager, QObject *parent = nullptr);
     ~ModConflictDetector() override;
 
-    ConflictInfo getConflictInfo(const QString &modId) const;
-    bool hasConflicts(const QString &modId) const;
+    [[nodiscard]] ConflictInfo getConflictInfo(const QString &modId) const;
+    [[nodiscard]] bool hasConflicts(const QString &modId) const;
     void invalidateCache();
 
 public slots:
