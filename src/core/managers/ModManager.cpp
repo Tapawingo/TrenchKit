@@ -76,6 +76,7 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
     mod.nexusUrl = params.nexusUrl;
     mod.itchGameId = params.itchGameId;
     mod.itchUrl = params.itchUrl;
+    mod.itchUploadId = params.itchUploadId;
     mod.author = params.author;
     mod.description = params.description;
     mod.version = params.version;

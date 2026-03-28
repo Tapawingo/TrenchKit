@@ -35,6 +35,7 @@ struct ModInfo {
     QString nexusUrl;             ///< NexusMods mod page URL.
     QString itchGameId;           ///< itch.io game ID (empty if not linked).
     QString itchUrl;              ///< itch.io game page URL.
+    QString itchUploadId;         ///< itch.io upload ID of the installed file (empty if not linked).
     QString version;              ///< Mod version string.
     QString author;               ///< Mod author name.
     QString description;          ///< Short mod description.

@@ -61,6 +61,7 @@ private:
         QString version;
         QString itchGameId;
         QString itchUrl;
+        QString itchUploadId;
         QString customModName;
         QDateTime uploadDate;
     };
@@ -71,11 +72,13 @@ private:
                            const QString &nexusUrl = QString(),
                            const QString &author = QString(), const QString &description = QString(), const QString &version = QString(),
                            const QString &itchGameId = QString(), const QString &itchUrl = QString(),
+                           const QString &itchUploadId = QString(),
                            const QDateTime &uploadDate = QDateTime(), bool isBatchProcessing = false);
     void handlePakFile(const QString &pakPath, const QString &nexusModId = QString(), const QString &nexusFileId = QString(),
                        const QString &nexusUrl = QString(),
                        const QString &author = QString(), const QString &description = QString(), const QString &version = QString(),
                        const QString &itchGameId = QString(), const QString &itchUrl = QString(),
+                       const QString &itchUploadId = QString(),
                        const QString &customModName = QString(), const QDateTime &uploadDate = QDateTime());
     bool isArchiveFile(const QString &filePath) const;
     void startProcessingFiles(const QList<FileToProcess> &files);

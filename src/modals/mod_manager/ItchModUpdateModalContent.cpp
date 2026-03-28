@@ -120,6 +120,10 @@ void ItchModUpdateModalContent::onDownloadFinished(const QString &savePath) {
         return;
     }
 
+    ModInfo updated = m_modManager->getMod(m_mod.id);
+    updated.itchUploadId = m_updateInfo.availableUploadId;
+    m_modManager->updateModMetadata(updated);
+
     MessageModal::information(m_modalManager, tr("Success"), tr("Mod updated successfully!"));
     accept();
 }
