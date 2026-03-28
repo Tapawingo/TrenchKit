@@ -13,6 +13,7 @@ TitleBar::TitleBar(QWidget *parent)
     , m_titleLabel(new QLabel(this))
     , m_updateButton(new QPushButton(this))
     , m_settingsButton(new QPushButton(this))
+    , m_maximizeButton(new QPushButton(this))
     , m_minimizeButton(new QPushButton(this))
     , m_closeButton(new QPushButton(this))
     , m_layout(new QHBoxLayout(this))
@@ -57,6 +58,12 @@ void TitleBar::setupUi() {
     m_settingsButton->setFocusPolicy(Qt::NoFocus);
     m_settingsButton->setCursor(Qt::PointingHandCursor);
 
+    m_maximizeButton->setText("□");
+    m_maximizeButton->setFixedSize(48, 48);
+    m_maximizeButton->setObjectName("maximizeButton");
+    m_maximizeButton->setFocusPolicy(Qt::NoFocus);
+    m_maximizeButton->setCursor(Qt::PointingHandCursor);
+
     m_minimizeButton->setText("−");
     m_minimizeButton->setFixedSize(48, 48);
     m_minimizeButton->setObjectName("minimizeButton");
@@ -83,6 +90,7 @@ void TitleBar::setupUi() {
     m_layout->addStretch();
     m_layout->addWidget(m_updateButton);
     m_layout->addWidget(m_settingsButton);
+    m_layout->addWidget(m_maximizeButton);
     m_layout->addWidget(m_minimizeButton);
     m_layout->addWidget(m_closeButton);
 
@@ -92,8 +100,13 @@ void TitleBar::setupUi() {
 void TitleBar::setupConnections() {
     connect(m_updateButton, &QPushButton::clicked, this, &TitleBar::updateClicked);
     connect(m_settingsButton, &QPushButton::clicked, this, &TitleBar::settingsClicked);
+    connect(m_maximizeButton, &QPushButton::clicked, this, &TitleBar::maximizeClicked);
     connect(m_minimizeButton, &QPushButton::clicked, this, &TitleBar::minimizeClicked);
     connect(m_closeButton, &QPushButton::clicked, this, &TitleBar::closeClicked);
+}
+
+void TitleBar::setMaximized(bool maximized) {
+    m_maximizeButton->setText(maximized ? QStringLiteral("❐") : QStringLiteral("□"));
 }
 
 void TitleBar::setUpdateVisible(bool visible) {
@@ -110,7 +123,21 @@ void TitleBar::mousePressEvent(QMouseEvent *event) {
 
 void TitleBar::mouseMoveEvent(QMouseEvent *event) {
     if (m_dragging && (event->buttons() & Qt::LeftButton)) {
+        if (window()->isMaximized()) {
+            const QPoint globalPos = event->globalPosition().toPoint();
+            const double relX = static_cast<double>(globalPos.x() - window()->x()) / window()->width();
+            window()->showNormal();
+            m_dragPosition = QPoint(static_cast<int>(window()->width() * relX),
+                                    m_dragPosition.y());
+        }
         window()->move(event->globalPosition().toPoint() - m_dragPosition);
+        event->accept();
+    }
+}
+
+void TitleBar::mouseDoubleClickEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton) {
+        emit maximizeClicked();
         event->accept();
     }
 }
