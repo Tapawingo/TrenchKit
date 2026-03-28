@@ -1045,7 +1045,7 @@ void ModManager::syncEnabledModsWithPaks() {
 }
 
 QString ModManager::cleanModName(const QString &fileName) const {
-    QString baseName = QFileInfo(fileName).baseName();
+    QString baseName = QFileInfo(fileName).completeBaseName();
 
     baseName.replace(QStringLiteral("War-WindowsNoEditor"), QString(), Qt::CaseInsensitive);
     baseName.replace(QStringLiteral("WindowsNoEditor"), QString(), Qt::CaseInsensitive);

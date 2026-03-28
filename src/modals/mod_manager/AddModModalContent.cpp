@@ -246,7 +246,7 @@ void AddModModalContent::handlePakFile(const QString &pakPath, const QString &ne
         modName = customModName;
     } else {
         QFileInfo fileInfo(normalizedPath);
-        modName = fileInfo.baseName();
+        modName = fileInfo.completeBaseName();
     }
 
     if (!m_modManager->addMod(normalizedPath, {
@@ -328,7 +328,7 @@ void AddModModalContent::onFromItchClicked() {
                 int secondUnderscore = fileName.indexOf('_', 10);
                 int thirdUnderscore = fileName.indexOf('_', secondUnderscore + 1);
                 if (thirdUnderscore != -1) {
-                    fileData.customModName = QFileInfo(fileName.mid(thirdUnderscore + 1)).baseName();
+                    fileData.customModName = QFileInfo(fileName.mid(thirdUnderscore + 1)).completeBaseName();
                 }
             }
 
