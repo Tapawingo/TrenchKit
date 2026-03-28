@@ -222,8 +222,8 @@ void MainWindow::onMaximizeClicked() {
     }
 }
 
-#ifdef Q_OS_WIN
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result) {
+#ifdef Q_OS_WIN
     if (eventType == "windows_generic_MSG") {
         MSG *msg = static_cast<MSG *>(message);
         if (msg->message == WM_NCHITTEST && !isMaximized()) {
@@ -248,9 +248,9 @@ bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr
             else if (bot)       { *result = HTBOTTOM;      return true; }
         }
     }
+#endif
     return QMainWindow::nativeEvent(eventType, message, result);
 }
-#endif
 
 void MainWindow::onCloseClicked() {
     close();
