@@ -45,6 +45,7 @@ public:
         QString version;
         QString itchGameId;
         QString itchUrl;
+        QString itchUploadId;
         QDateTime uploadDate;
     };
 

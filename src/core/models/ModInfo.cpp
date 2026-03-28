@@ -30,6 +30,9 @@ QJsonObject ModInfo::toJson() const {
     if (!itchUrl.isEmpty()) {
         json["itchUrl"] = itchUrl;
     }
+    if (!itchUploadId.isEmpty()) {
+        json["itchUploadId"] = itchUploadId;
+    }
     if (!version.isEmpty()) {
         json["version"] = version;
     }
@@ -120,6 +123,9 @@ ModInfo ModInfo::fromJson(const QJsonObject &json) {
     }
     if (json.contains("itchUrl")) {
         mod.itchUrl = json["itchUrl"].toString();
+    }
+    if (json.contains("itchUploadId")) {
+        mod.itchUploadId = json["itchUploadId"].toString();
     }
     if (json.contains("version")) {
         mod.version = json["version"].toString();
