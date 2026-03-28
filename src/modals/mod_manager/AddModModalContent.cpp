@@ -99,9 +99,9 @@ void AddModModalContent::retranslateUi() {
 }
 
 void AddModModalContent::onFromFileClicked() {
-    QString filePath = QFileDialog::getOpenFileName(
+    QStringList filePaths = QFileDialog::getOpenFileNames(
         this,
-        tr("Select Mod File"),
+        tr("Select Mod Files"),
         QString(),
         tr("Mod Files (*.pak *.zip *.rar *.7z *.tar.gz *.tar.bz2 *.tar.xz);;"
            "Pak Files (*.pak);;"
@@ -109,15 +109,18 @@ void AddModModalContent::onFromFileClicked() {
            "All Files (*.*)")
     );
 
-    if (filePath.isEmpty()) {
+    if (filePaths.isEmpty()) {
         return;
     }
 
-    if (isArchiveFile(filePath)) {
-        handleArchiveFile(filePath);
-    } else {
-        handlePakFile(filePath);
+    QList<FileToProcess> filesToProcess;
+    for (const QString &filePath : filePaths) {
+        FileToProcess fileData;
+        fileData.filePath = filePath;
+        filesToProcess.append(fileData);
     }
+
+    startProcessingFiles(filesToProcess);
 }
 
 bool AddModModalContent::isArchiveFile(const QString &filePath) const {
