@@ -125,6 +125,13 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_unregisteredModsWatcher, &QFutureWatcher<void>::finished,
             this, &MainWindow::onUnregisteredModsDetectionComplete);
 
+    m_verificationWatcher = new QFutureWatcher<QList<ModManager::VerificationIssue>>(this);
+    connect(m_verificationWatcher,
+            &QFutureWatcher<QList<ModManager::VerificationIssue>>::finished,
+            this, &MainWindow::onVerificationComplete);
+
+    m_syncWatcher = new QFutureWatcher<void>(this);
+
     QSize windowSize(1000, 700);
     setMinimumSize(windowSize);
     setMaximumSize(windowSize);
@@ -235,6 +242,7 @@ void MainWindow::setupProfileManager() {
 
     connect(m_profileManager, &ProfileManager::errorOccurred,
             this, [this](const QString &error) {
+        qWarning() << "ProfileManager:" << error;
         MessageModal::warning(m_modalManager, tr("Profile Error"), error);
     });
 }
@@ -247,6 +255,9 @@ void MainWindow::setupModList() {
     m_modListWidget->setItchServices(m_itchClient, m_itchAuth);
     m_modListWidget->setUpdateService(m_modUpdateService);
     m_modListWidget->setItchUpdateService(m_itchUpdateService);
+
+    connect(m_modListWidget, &ModListWidget::verifyModsRequested,
+            this, &MainWindow::runModVerification);
 }
 
 void MainWindow::setupRightPanel() {
@@ -271,6 +282,7 @@ void MainWindow::setupRightPanel() {
 
     connect(m_rightPanelWidget, &RightPanelWidget::errorOccurred,
             this, [this](const QString &error) {
+        qWarning() << "RightPanel:" << error;
         MessageModal::warning(m_modalManager, tr("Error"), error);
     });
 
@@ -454,6 +466,36 @@ void MainWindow::onModsLoadComplete() {
     }
 
     trySyncEnabledMods();
+    runModVerification();
+}
+
+void MainWindow::runModVerification() {
+    if (!m_verificationWatcher || m_verificationWatcher->isRunning()) return;
+    QPointer<ModManager> mgr(m_modManager);
+    m_verificationWatcher->setFuture(QtConcurrent::run([mgr]() {
+        return mgr ? mgr->verifyMods() : QList<ModManager::VerificationIssue>{};
+    }));
+}
+
+void MainWindow::onVerificationComplete() {
+    const auto issues = m_verificationWatcher->result();
+    ActivityLogWidget *log = m_rightPanelWidget->getActivityLog();
+    if (issues.isEmpty()) {
+        log->addLogEntry(tr("All mods verified OK."), ActivityLogWidget::LogLevel::Success);
+        return;
+    }
+    for (const auto &issue : issues) {
+        qWarning() << "Mod verification:" << issue.modName << "-" << issue.issue;
+        log->addLogEntry(tr("Mod issue: %1 — %2").arg(issue.modName, issue.issue),
+                         ActivityLogWidget::LogLevel::Warning);
+    }
+    QStringList names;
+    names.reserve(issues.size());
+    for (const auto &issue : issues)
+        names.append(QStringLiteral("• ") + issue.modName);
+    MessageModal::warning(m_modalManager, tr("Mod Verification"),
+        tr("%1 mod(s) have missing files:\n\n%2\n\nYou may need to re-add these mods.")
+           .arg(issues.size()).arg(names.join('\n')));
 }
 
 QString MainWindow::findProfileImportPath() const {
@@ -468,16 +510,15 @@ QString MainWindow::findProfileImportPath() const {
 }
 
 void MainWindow::trySyncEnabledMods() {
-    if (!m_modManager || !m_modsLoaded || !m_installPathReady) {
-        return;
-    }
-
+    if (!m_modManager || !m_modsLoaded || !m_installPathReady) return;
+    if (m_syncWatcher->isRunning()) return;
     const QString paksPath = m_modManager->getPaksPath();
-    if (paksPath.isEmpty() || !QDir(paksPath).exists()) {
-        return;
-    }
+    if (paksPath.isEmpty() || !QDir(paksPath).exists()) return;
 
-    m_modManager->syncEnabledModsWithPaks();
+    QPointer<ModManager> mgr(m_modManager);
+    m_syncWatcher->setFuture(QtConcurrent::run([mgr]() {
+        if (mgr) mgr->syncEnabledModsWithPaks();
+    }));
 }
 
 void MainWindow::onUnregisteredModsDetectionComplete() {

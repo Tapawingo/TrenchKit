@@ -99,6 +99,17 @@ public:
     /// @brief Produces a human-readable display name from a raw pak filename.
     QString cleanModName(const QString &fileName) const;
 
+    /// @brief A single issue found by verifyMods().
+    struct VerificationIssue {
+        QString modId;
+        QString modName;
+        QString issue; ///< Human-readable description of the problem.
+    };
+
+    /// @brief Checks every mod's pak file exists in storage. Thread-safe; safe to call from any thread.
+    /// @returns A list of issues; empty means all mods are healthy.
+    [[nodiscard]] QList<VerificationIssue> verifyMods() const;
+
 signals:
     /// @brief Emitted after any change to the mod list or load order.
     void modsChanged();

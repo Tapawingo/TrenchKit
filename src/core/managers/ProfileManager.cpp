@@ -336,7 +336,8 @@ bool ProfileManager::updateProfile(const QString &profileId) {
                           [&profileId](const ProfileInfo &p) { return p.id == profileId; });
 
     if (it == m_profiles.end()) {
-        emit errorOccurred("Profile not found: " + profileId);
+        qWarning() << "Profile not found:" << profileId;
+        emit errorOccurred(tr("Profile not found."));
         return false;
     }
 
@@ -385,7 +386,8 @@ bool ProfileManager::deleteProfile(const QString &profileId) {
                           [&profileId](const ProfileInfo &p) { return p.id == profileId; });
 
     if (it == m_profiles.end()) {
-        emit errorOccurred("Profile not found: " + profileId);
+        qWarning() << "Profile not found:" << profileId;
+        emit errorOccurred(tr("Profile not found."));
         return false;
     }
 
@@ -415,7 +417,8 @@ bool ProfileManager::reorderProfiles(const QList<QString> &orderedProfileIds) {
         auto it = std::find_if(m_profiles.begin(), m_profiles.end(),
                               [&profileId](const ProfileInfo &p) { return p.id == profileId; });
         if (it == m_profiles.end()) {
-            emit errorOccurred("Profile not found during reordering: " + profileId);
+            qWarning() << "Profile not found during reordering:" << profileId;
+            emit errorOccurred(tr("Profile not found."));
             return false;
         }
         reorderedProfiles.append(*it);
@@ -490,7 +493,8 @@ bool ProfileManager::applyProfile(const QString &profileId, bool ignoreWarnings)
 
     ProfileInfo profile = getProfile(profileId);
     if (profile.id.isEmpty()) {
-        emit errorOccurred("Profile not found: " + profileId);
+        qWarning() << "Profile not found:" << profileId;
+        emit errorOccurred(tr("Profile not found."));
         return false;
     }
 
@@ -516,7 +520,8 @@ bool ProfileManager::applyProfile(const QString &profileId, bool ignoreWarnings)
 bool ProfileManager::exportProfile(const QString &profileId, const QString &filePath) {
     ProfileInfo profile = getProfile(profileId);
     if (profile.id.isEmpty()) {
-        emit errorOccurred("Profile not found: " + profileId);
+        qWarning() << "Profile not found:" << profileId;
+        emit errorOccurred(tr("Profile not found."));
         return false;
     }
 
@@ -564,7 +569,11 @@ bool ProfileManager::exportProfile(const QString &profileId, const QString &file
         auto it = std::find_if(allMods.begin(), allMods.end(),
                                [&config](const ModInfo &mod) { return mod.id == config.modId; });
         if (it == allMods.end()) {
-            emit errorOccurred("Missing mod for profile export: " + config.modId);
+            ModInfo missingMod = m_modManager->getMod(config.modId);
+            QString label = missingMod.name.isEmpty() ? config.modId : missingMod.name;
+            qWarning() << "Profile export: missing mod file for" << label;
+            emit errorOccurred(tr("Cannot export profile: mod file missing for \"%1\". "
+                                  "Try removing and re-adding the mod.").arg(label));
             return false;
         }
         modsById.insert(it->id, *it);

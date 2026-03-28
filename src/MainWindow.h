@@ -6,6 +6,7 @@
 #include <QMainWindow>
 #include <QFutureWatcher>
 #include <QPointer>
+#include "core/managers/ModManager.h"
 #include "core/services/UpdaterService.h"
 #include "core/api/NexusModsClient.h"
 #include "core/api/NexusModsAuth.h"
@@ -25,7 +26,6 @@ class InstallPathWidget;
 class ModListWidget;
 class RightPanelWidget;
 class ProfileManagerWidget;
-class ModManager;
 class ProfileManager;
 class QProgressDialog;
 class SettingsWidget;
@@ -64,6 +64,8 @@ private slots:
     void onUpdateDownloadProgress(qint64 received, qint64 total);
     void onUpdateDownloadFinished(const QString &savePath);
     void onSettingsClicked();
+    void runModVerification();
+    void onVerificationComplete();
 
 private:
     void setupTitleBar();
@@ -96,6 +98,8 @@ private:
     ProfileManager *m_profileManager;
     QFutureWatcher<bool> *m_modLoadWatcher;
     QFutureWatcher<void> *m_unregisteredModsWatcher;
+    QFutureWatcher<QList<ModManager::VerificationIssue>> *m_verificationWatcher = nullptr;
+    QFutureWatcher<void> *m_syncWatcher = nullptr;
     bool m_firstShow = true;
     UpdaterService *m_updater = nullptr;
     NexusModsClient *m_nexusClient = nullptr;
