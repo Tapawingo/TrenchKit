@@ -147,7 +147,7 @@ qt_add_executable(TrenchKit
 )
 
 target_compile_options(TrenchKit PRIVATE
-  $<IF:$<CXX_COMPILER_ID:MSVC>,/W4,-Wall -Wextra -Wpedantic>
+  $<IF:$<CXX_COMPILER_ID:MSVC>,/W4,-Wall -Wextra -Wpedantic -Wno-missing-field-initializers>
 )
 
 target_compile_definitions(TrenchKit PRIVATE
