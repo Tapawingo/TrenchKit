@@ -119,8 +119,13 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
     }
 
     QString destPath = m_modsStoragePath + "/" + mod.fileName;
-    if (!QFile::copy(pakFilePath, destPath)) {
-        emit errorOccurred(tr("Failed to copy mod file to storage"));
+    if (QFile::exists(destPath)) {
+        emit errorOccurred(tr("Mod already installed: \"%1\" is already in your mod library.").arg(mod.name));
+        return false;
+    }
+    QFile srcFile(pakFilePath);
+    if (!srcFile.copy(destPath)) {
+        emit errorOccurred(tr("Failed to copy mod file to storage: %1").arg(srcFile.errorString()));
         return false;
     }
 
