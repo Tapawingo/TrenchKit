@@ -69,9 +69,8 @@ signals:
     void modRemoved(const QString &modId);
     void errorOccurred(const QString &error);
 
-    static constexpr int PriorityPadWidth = 3;
-
 private:
+    static constexpr int PriorityPadWidth = 3;
     QString getModFilePath(const QString &modId) const;
     QString getMetadataFilePath() const;
     bool copyModToPaks(const ModInfo &mod);

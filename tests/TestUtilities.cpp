@@ -61,10 +61,17 @@ class TestUtilities : public QObject {
 
 private slots:
     void testParseVersionFromTag() {
-        QCOMPARE(UpdaterService::parseVersionFromTag("v1.2.3"),
-                 QVersionNumber(1, 2, 3));
-        QCOMPARE(UpdaterService::parseVersionFromTag("1.2.3-beta"),
-                 QVersionNumber(1, 2, 3));
+        auto v1 = UpdaterService::parseVersionFromTag("v1.2.3");
+        QCOMPARE(v1.major, 1);
+        QCOMPARE(v1.minor, 2);
+        QCOMPARE(v1.patch, 3);
+        QVERIFY(v1.preRelease.isEmpty());
+
+        auto v2 = UpdaterService::parseVersionFromTag("1.2.3-beta");
+        QCOMPARE(v2.major, 1);
+        QCOMPARE(v2.minor, 2);
+        QCOMPARE(v2.patch, 3);
+        QCOMPARE(v2.preRelease, QStringLiteral("beta"));
     }
 
     void testUpdateArchiveExtractor() {
