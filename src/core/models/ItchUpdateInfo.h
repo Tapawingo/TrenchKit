@@ -14,9 +14,9 @@ struct ItchUpdateInfo {
     QString availableUploadId;
     QDateTime currentUploadDate;
     QDateTime availableUploadDate;
+    QList<ItchUploadInfo> candidateUploads;
     QDateTime lastChecked;
     bool updateAvailable = false;
-    QList<ItchUploadInfo> candidateUploads;
 
     ItchUpdateInfo() = default;
 

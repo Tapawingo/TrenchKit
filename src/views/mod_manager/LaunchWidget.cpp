@@ -14,8 +14,8 @@
 
 LaunchWidget::LaunchWidget(QWidget *parent)
     : QWidget(parent)
-    , m_launchButton(new QToolButton(this))
     , m_gamePollTimer(new QTimer(this))
+    , m_launchButton(new QToolButton(this))
 {
     setupUi();
     setupConnections();

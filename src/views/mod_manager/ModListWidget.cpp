@@ -47,7 +47,6 @@ ModListWidget::ModListWidget(QWidget *parent)
     , m_loadingLabel(new QLabel(this))
     , m_modCountLabel(new QLabel(this))
     , m_loadingTimer(new QTimer(this))
-    , m_conflictDetector(nullptr)
 {
     setupUi();
 

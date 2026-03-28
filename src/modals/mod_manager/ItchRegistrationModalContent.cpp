@@ -200,7 +200,7 @@ void ItchRegistrationModalContent::onAuthFailed(const QString &error) {
     m_authenticateButton->setEnabled(true);
 }
 
-void ItchRegistrationModalContent::onGameInfoReceived(const QString &gameId, const QString &title, const QString &author) {
+void ItchRegistrationModalContent::onGameInfoReceived(const QString &gameId, const QString &, const QString &author) {
     m_currentGameId = gameId;
     m_author = author;
 

@@ -228,7 +228,7 @@ void MainWindow::setupProfileManager() {
     ActivityLogWidget *log = m_rightPanelWidget->getActivityLog();
 
     connect(m_profileManagerWidget, &ProfileManagerWidget::profileLoadRequested,
-            this, [this, log](const QString &profileId) {
+            this, [this, log](const QString &) {
         m_modListWidget->refreshModList();
         log->addLogEntry(tr("Profile Loaded"), ActivityLogWidget::LogLevel::Info);
     });

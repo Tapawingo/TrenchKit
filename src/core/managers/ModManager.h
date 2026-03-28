@@ -21,16 +21,16 @@ public:
     void setModsStoragePath(const QString &modsPath);
 
     struct AddModParams {
-        QString name;
-        QString nexusModId;
-        QString nexusFileId;
-        QString nexusUrl;
-        QString author;
-        QString description;
-        QString version;
-        QString itchGameId;
-        QString itchUrl;
-        QDateTime uploadDate;
+        QString name {};
+        QString nexusModId {};
+        QString nexusFileId {};
+        QString nexusUrl {};
+        QString author {};
+        QString description {};
+        QString version {};
+        QString itchGameId {};
+        QString itchUrl {};
+        QDateTime uploadDate {};
     };
 
     // Mod management

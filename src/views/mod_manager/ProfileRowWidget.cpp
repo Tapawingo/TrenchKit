@@ -17,7 +17,7 @@ ProfileRowWidget::ProfileRowWidget(const QString &profileId, const QString &prof
     setupUi(profileName);
 }
 
-void ProfileRowWidget::setupUi(const QString &profileName) {
+void ProfileRowWidget::setupUi(const QString &) {
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(
         Theme::Spacing::PROFILE_ROW_PADDING_HORIZONTAL,
