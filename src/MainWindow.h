@@ -1,3 +1,5 @@
+/// @file MainWindow.h
+/// @brief Application main window; owns all services and orchestrates the UI.
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -29,6 +31,11 @@ class QProgressDialog;
 class SettingsWidget;
 class QShortcut;
 
+/// @brief Root widget that owns all services and injects them into child views.
+///
+/// Services (@c ModManager, @c ProfileManager, API clients, update services) are
+/// created here and passed as raw pointers to widgets. Services are never parented
+/// to widgets — only to @c MainWindow.
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
@@ -36,6 +43,7 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    /// @brief Returns the application-wide modal manager; used by views to show modals.
     ModalManager* modalManager() { return m_modalManager; }
 
 protected:

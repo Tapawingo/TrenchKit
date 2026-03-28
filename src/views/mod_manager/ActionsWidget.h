@@ -1,3 +1,5 @@
+/// @file ActionsWidget.h
+/// @brief Toolbar widget with Add/Remove/Move-Up/Move-Down mod actions.
 #ifndef ACTIONSWIDGET_H
 #define ACTIONSWIDGET_H
 
@@ -9,6 +11,10 @@ class QLabel;
 class QPushButton;
 class QFrame;
 
+/// @brief Provides action buttons for the mod list; disables buttons based on selection state.
+///
+/// Call @c onModSelectionChanged() when the mod list selection changes to
+/// enable or disable buttons appropriately.
 class ActionsWidget : public QWidget {
     Q_OBJECT
 
@@ -26,6 +32,7 @@ signals:
     void errorOccurred(const QString &error);
 
 public slots:
+    /// @brief Updates button enabled states based on @p selectedRow and @p totalMods.
     void onModSelectionChanged(int selectedRow, int totalMods);
 
 protected:

@@ -1,3 +1,5 @@
+/// @file ModalContainer.h
+/// @brief Styled container widget that wraps BaseModalContent inside a ModalOverlay.
 #ifndef MODALCONTAINER_H
 #define MODALCONTAINER_H
 
@@ -6,6 +8,9 @@
 class BaseModalContent;
 class QVBoxLayout;
 
+/// @brief Draws the modal dialog background and border, then hosts the content widget.
+///
+/// Background rendering is cached to a @c QPixmap and invalidated on resize.
 class ModalContainer : public QWidget {
     Q_OBJECT
 
@@ -32,8 +37,8 @@ private:
     QSize m_lastSize;
 
     static constexpr const char* GRADIENT_LIGHT = "#141413";
-    static constexpr const char* GRADIENT_DARK = "#141413";
-    static constexpr int BORDER_WIDTH = 3;
+    static constexpr const char* GRADIENT_DARK  = "#141413";
+    static constexpr int BORDER_WIDTH  = 3;
     static constexpr int BORDER_RADIUS = 0;
 };
 

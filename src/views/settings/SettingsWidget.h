@@ -1,3 +1,5 @@
+/// @file SettingsWidget.h
+/// @brief Settings panel covering updater, API credentials, language, shortcuts, and logging.
 #ifndef SETTINGSWIDGET_H
 #define SETTINGSWIDGET_H
 
@@ -19,6 +21,11 @@ class QCheckBox;
 class QPushButton;
 class QLabel;
 
+/// @brief Full-page settings widget shown over the main window via @c MainWindow::showSettingsOverlay().
+///
+/// Covers: update source, update channel, auto-check toggle, download directory,
+/// NexusMods and itch.io API key management, language selection, log file access,
+/// desktop/start-menu shortcuts, and .tkprofile file association.
 class SettingsWidget : public QWidget {
     Q_OBJECT
 
@@ -26,7 +33,9 @@ public:
     explicit SettingsWidget(QWidget *parent, UpdaterService *updater);
     ~SettingsWidget() override = default;
 
+    /// @brief Reads stored @c QSettings and applies them to the injected services; returns false on error.
     bool applyStoredSettings();
+    /// @brief Populates all UI controls from the current @c QSettings values.
     void loadSettingsIntoUi();
     QString resolvedDownloadDir() const;
     void setCurrentVersion(const QString &version);
@@ -40,6 +49,7 @@ protected:
 
 signals:
     void cancelRequested();
+    /// @brief Emitted when the user clicks Save; @p autoCheck reflects the auto-check setting.
     void settingsApplied(bool autoCheck);
     void manualCheckRequested();
 

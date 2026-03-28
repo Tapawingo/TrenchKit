@@ -1,12 +1,17 @@
+/// @file Theme.h
+/// @brief Application-wide color palette and layout spacing constants.
 #ifndef THEME_H
 #define THEME_H
 
 #include <QString>
 
+/// @brief Provides the global stylesheet and named constants for colors and spacing.
 class Theme {
 public:
+    /// @brief Returns the full Qt stylesheet string applied to the application.
     static QString getStyleSheet();
 
+    /// @brief CSS hex color strings used throughout the UI.
     struct Colors {
         static constexpr const char* BACKGROUND_PRIMARY = "#1e1e1e";
         static constexpr const char* BACKGROUND_SECONDARY = "#2c2c2c";
@@ -35,6 +40,7 @@ public:
         static constexpr const char* TEXT_DISABLED = "#808080";
     };
 
+    /// @brief Pixel values for margins, padding, and spacing used in layouts.
     struct Spacing {
         static constexpr int CONTAINER_MARGIN = 0;
         static constexpr int CONTAINER_SPACING = 0;

@@ -1,9 +1,16 @@
+/// @file NexusModsAuth.h
+/// @brief WebSocket SSO authentication flow for NexusMods.
 #pragma once
 
 #include <QObject>
 #include <QWebSocket>
 #include <QString>
 
+/// @brief Handles the NexusMods WebSocket-based single-sign-on flow.
+///
+/// Connects to the NexusMods SSO endpoint, emits @c authenticationStarted with
+/// a browser URL the user must visit to approve the connection, then waits for
+/// the API key to arrive over the WebSocket.
 class NexusModsAuth final : public QObject {
     Q_OBJECT
 
@@ -12,11 +19,14 @@ public:
     ~NexusModsAuth() override = default;
 
 public slots:
+    /// @brief Opens the WebSocket connection and emits @c authenticationStarted with the approval URL.
     void startAuthentication();
     void cancelAuthentication();
 
 signals:
+    /// @brief Emitted once the WebSocket is ready; @p browserUrl must be opened by the user.
     void authenticationStarted(QString browserUrl);
+    /// @brief Emitted when the user approves the connection; @p apiKey is ready to use.
     void authenticationComplete(QString apiKey);
     void authenticationFailed(QString error);
     void authenticationCancelled();

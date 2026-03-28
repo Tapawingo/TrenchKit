@@ -1,3 +1,5 @@
+/// @file ItchModUpdateService.h
+/// @brief itch.io update checker for installed mods.
 #pragma once
 
 #include <QObject>
@@ -11,6 +13,12 @@ class ModManager;
 class ItchClient;
 struct ItchUploadInfo;
 
+/// @brief Checks itch.io for newer uploads of installed mods.
+///
+/// Update detection compares upload dates rather than version strings.
+/// When multiple candidate uploads exist, the result carries all of them
+/// so the UI can prompt the user to choose. Mods are checked one at a time
+/// with a 500 ms rate-limit delay between requests.
 class ItchModUpdateService final : public QObject {
     Q_OBJECT
 
@@ -20,20 +28,29 @@ public:
                                  QObject *parent = nullptr);
     ~ItchModUpdateService() override = default;
 
+    /// @brief Returns true if a cached update result exists for @p modId.
     bool hasUpdate(const QString &modId) const;
+    /// @brief Returns the cached update info for @p modId; result is default-constructed if absent.
     ItchUpdateInfo getUpdateInfo(const QString &modId) const;
+    /// @brief Marks @p uploadIds as ignored so they are skipped in future update checks for @p modId.
     void ignoreUpdatesForMod(const QString &modId, const QStringList &uploadIds);
+    /// @brief Clears any cached update result for @p modId.
     void clearUpdateForMod(const QString &modId);
 
 public slots:
+    /// @brief Queues all itch.io-linked mods for update checking.
     void checkAllModsForUpdates();
+    /// @brief Checks a single mod immediately, bypassing the queue.
     void checkModForUpdate(const QString &modId);
     void cancelCheck();
 
 signals:
     void checkStarted();
+    /// @brief Emitted per mod as the queue is processed; @p current and @p total are queue positions.
     void checkProgress(int current, int total);
+    /// @brief Emitted for each mod where a newer upload is found.
     void updateFound(QString modId, ItchUpdateInfo updateInfo);
+    /// @brief Emitted when all queued mods have been checked; @p updatesFound is the total count.
     void checkComplete(int updatesFound);
     void errorOccurred(QString message);
 
@@ -63,5 +80,5 @@ private:
     bool m_isChecking = false;
 
     QTimer m_rateLimitTimer;
-    static constexpr int RATE_LIMIT_DELAY_MS = 500;
+    static constexpr int RATE_LIMIT_DELAY_MS = 500; ///< Delay between itch.io API requests (ms).
 };

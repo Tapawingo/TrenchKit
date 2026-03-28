@@ -1,3 +1,5 @@
+/// @file ProfileRowWidget.h
+/// @brief Widget representing a single row in the profile list.
 #ifndef PROFILEROWWIDGET_H
 #define PROFILEROWWIDGET_H
 
@@ -7,6 +9,7 @@
 
 class QLabel;
 
+/// @brief Displays one profile's name and active indicator; emits context-action signals.
 class ProfileRowWidget : public QWidget {
     Q_OBJECT
 
@@ -14,6 +17,7 @@ public:
     explicit ProfileRowWidget(const QString &profileId, const QString &profileName, QWidget *parent = nullptr);
     ~ProfileRowWidget() override = default;
 
+    /// @brief Highlights the row as the currently active (last applied) profile.
     void setActive(bool active);
     void setSelected(bool selected);
     QString profileId() const { return m_profileId; }
