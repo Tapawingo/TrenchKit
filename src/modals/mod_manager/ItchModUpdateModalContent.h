@@ -1,3 +1,5 @@
+/// @file ItchModUpdateModalContent.h
+/// @brief Modal that auto-downloads and installs an itch.io mod update.
 #ifndef ITCHMODUPDATEMODALCONTENT_H
 #define ITCHMODUPDATEMODALCONTENT_H
 
@@ -13,6 +15,11 @@ class QLabel;
 class QProgressBar;
 class QPushButton;
 
+/// @brief Shown when the user requests an update for an itch.io-linked mod.
+///
+/// If the @c ItchUpdateInfo has multiple candidate uploads, prompts the user
+/// to choose one via @c FileSelectionModalContent before starting the download.
+/// Otherwise immediately starts downloading on @c showEvent.
 class ItchModUpdateModalContent : public BaseModalContent {
     Q_OBJECT
 

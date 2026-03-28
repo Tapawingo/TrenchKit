@@ -1,4 +1,5 @@
 #include "ModManager.h"
+#include <algorithm>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -36,13 +37,7 @@ QString ModManager::getPaksPath() const {
     return m_foxholeInstallPath + "/War/Content/Paks";
 }
 
-bool ModManager::addMod(const QString &pakFilePath, const QString &modName,
-                        const QString &nexusModId, const QString &nexusFileId,
-                        const QString &nexusUrl,
-                        const QString &author, const QString &description,
-                        const QString &version, const QString &itchGameId,
-                        const QString &itchUrl,
-                        const QDateTime &uploadDate) {
+bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) {
     QFileInfo fileInfo(pakFilePath);
     if (!fileInfo.exists() || !fileInfo.isFile()) {
         emit errorOccurred(tr("Mod file does not exist: %1").arg(pakFilePath));
@@ -59,16 +54,16 @@ bool ModManager::addMod(const QString &pakFilePath, const QString &modName,
     ModInfo mod;
     mod.id = ModInfo::generateId();
 
-    if (!modName.isEmpty()) {
-        mod.fileName = modName + fileInfo.suffix().prepend('.');
-        mod.name = modName;
+    if (!params.name.isEmpty()) {
+        mod.fileName = params.name + fileInfo.suffix().prepend('.');
+        mod.name = params.name;
     } else {
         mod.fileName = fileInfo.fileName();
         mod.name = cleanModName(fileInfo.fileName());
     }
 
     mod.installDate = QDateTime::currentDateTime();
-    mod.uploadDate = uploadDate;
+    mod.uploadDate = params.uploadDate;
     mod.enabled = false;
 
     {
@@ -76,14 +71,14 @@ bool ModManager::addMod(const QString &pakFilePath, const QString &modName,
         mod.priority = m_mods.size();
     }
 
-    mod.nexusModId = nexusModId;
-    mod.nexusFileId = nexusFileId;
-    mod.nexusUrl = nexusUrl;
-    mod.itchGameId = itchGameId;
-    mod.itchUrl = itchUrl;
-    mod.author = author;
-    mod.description = description;
-    mod.version = version;
+    mod.nexusModId = params.nexusModId;
+    mod.nexusFileId = params.nexusFileId;
+    mod.nexusUrl = params.nexusUrl;
+    mod.itchGameId = params.itchGameId;
+    mod.itchUrl = params.itchUrl;
+    mod.author = params.author;
+    mod.description = params.description;
+    mod.version = params.version;
 
     if (hasManifest) {
         mod.manifestId = manifest.id;
@@ -146,7 +141,7 @@ bool ModManager::removeMod(const QString &modId) {
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
 
         if (it == m_mods.end()) {
@@ -168,7 +163,7 @@ bool ModManager::removeMod(const QString &modId) {
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
         if (it != m_mods.end()) {
             m_mods.erase(it);
@@ -193,7 +188,7 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
 
         if (it == m_mods.end()) {
@@ -232,13 +227,14 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
         if (!QFile::remove(oldPath)) {
             emit errorOccurred(tr("Failed to remove old mod file"));
             if (wasEnabled) {
-                QMutexLocker locker(&m_modsMutex);
-                auto it = std::find_if(m_mods.begin(), m_mods.end(),
-                                       [&modId](const ModInfo &mod) { return mod.id == modId; });
-                if (it != m_mods.end()) {
-                    it->priority = savedPriority;
+                {
+                    QMutexLocker locker(&m_modsMutex);
+                    auto it = std::ranges::find_if(m_mods,
+                                           [&modId](const ModInfo &mod) { return mod.id == modId; });
+                    if (it != m_mods.end()) {
+                        it->priority = savedPriority;
+                    }
                 }
-                locker.unlock();
                 enableMod(modId);
             }
             return false;
@@ -253,7 +249,7 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
         if (it != m_mods.end()) {
             it->version = newVersion;
@@ -289,7 +285,7 @@ bool ModManager::enableMod(const QString &modId) {
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
 
         if (it == m_mods.end()) {
@@ -315,7 +311,7 @@ bool ModManager::enableMod(const QString &modId) {
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
         if (it != m_mods.end()) {
             it->enabled = true;
@@ -336,7 +332,7 @@ bool ModManager::disableMod(const QString &modId) {
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
 
         if (it == m_mods.end()) {
@@ -362,7 +358,7 @@ bool ModManager::disableMod(const QString &modId) {
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
         if (it != m_mods.end()) {
             it->enabled = false;
@@ -403,7 +399,7 @@ bool ModManager::setAllModsEnabled(bool enabled) {
         }
 
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&mod](const ModInfo &item) { return item.id == mod.id; });
         if (it != m_mods.end()) {
             it->enabled = enabled;
@@ -451,7 +447,7 @@ bool ModManager::setModsEnabled(const QStringList &modIds, bool enabled) {
         }
 
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&mod](const ModInfo &item) { return item.id == mod.id; });
         if (it != m_mods.end()) {
             it->enabled = enabled;
@@ -469,20 +465,19 @@ bool ModManager::setModsEnabled(const QStringList &modIds, bool enabled) {
 }
 
 bool ModManager::setModPriority(const QString &modId, int priority) {
-    QMutexLocker locker(&m_modsMutex);
-    auto it = std::find_if(m_mods.begin(), m_mods.end(),
-                           [&modId](const ModInfo &mod) { return mod.id == modId; });
+    {
+        QMutexLocker locker(&m_modsMutex);
+        auto it = std::ranges::find_if(m_mods,
+                               [&modId](const ModInfo &mod) { return mod.id == modId; });
 
-    if (it == m_mods.end()) {
-        return false;
+        if (it == m_mods.end()) {
+            return false;
+        }
+
+        it->priority = priority;
+        sortModsByPriority();
+        renumberEnabledMods();
     }
-
-    it->priority = priority;
-    sortModsByPriority();
-
-    // Renumber all enabled mods to reflect new priority order
-    renumberEnabledMods();
-    locker.unlock();
 
     saveMods();
     emit modsChanged();
@@ -497,26 +492,27 @@ bool ModManager::batchSetModPriorities(const QMap<QString, int> &priorityMap) {
 
     bool wasBlocked = blockSignals(true);
 
-    QMutexLocker locker(&m_modsMutex);
     bool anyChanged = false;
-    for (auto it = priorityMap.constBegin(); it != priorityMap.constEnd(); ++it) {
-        const QString &modId = it.key();
-        int newPriority = it.value();
+    {
+        QMutexLocker locker(&m_modsMutex);
+        for (auto it = priorityMap.constBegin(); it != priorityMap.constEnd(); ++it) {
+            const QString &modId = it.key();
+            int newPriority = it.value();
 
-        auto modIt = std::find_if(m_mods.begin(), m_mods.end(),
-                                   [&modId](const ModInfo &mod) { return mod.id == modId; });
+            auto modIt = std::ranges::find_if(m_mods,
+                                       [&modId](const ModInfo &mod) { return mod.id == modId; });
 
-        if (modIt != m_mods.end() && modIt->priority != newPriority) {
-            modIt->priority = newPriority;
-            anyChanged = true;
+            if (modIt != m_mods.end() && modIt->priority != newPriority) {
+                modIt->priority = newPriority;
+                anyChanged = true;
+            }
+        }
+
+        if (anyChanged) {
+            sortModsByPriority();
+            renumberEnabledMods();
         }
     }
-
-    if (anyChanged) {
-        sortModsByPriority();
-        renumberEnabledMods();
-    }
-    locker.unlock();
 
     if (anyChanged) {
         saveMods();
@@ -532,50 +528,55 @@ bool ModManager::batchSetModPriorities(const QMap<QString, int> &priorityMap) {
 }
 
 bool ModManager::updateModMetadata(const ModInfo &updatedMod) {
-    QMutexLocker locker(&m_modsMutex);
-    auto it = std::find_if(m_mods.begin(), m_mods.end(),
-                           [&updatedMod](const ModInfo &mod) { return mod.id == updatedMod.id; });
+    bool fileNameChanged = false;
+    QString oldPath, newPath;
 
-    if (it == m_mods.end()) {
-        emit errorOccurred(tr("Mod not found: %1").arg(updatedMod.id));
-        return false;
+    {
+        QMutexLocker locker(&m_modsMutex);
+        auto it = std::ranges::find_if(m_mods,
+                               [&updatedMod](const ModInfo &mod) { return mod.id == updatedMod.id; });
+
+        if (it == m_mods.end()) {
+            emit errorOccurred(tr("Mod not found: %1").arg(updatedMod.id));
+            return false;
+        }
+
+        QString oldFileName = it->fileName;
+        fileNameChanged = (oldFileName != updatedMod.fileName);
+
+        it->name = updatedMod.name;
+        it->description = updatedMod.description;
+        it->nexusModId = updatedMod.nexusModId;
+        it->nexusFileId = updatedMod.nexusFileId;
+        it->nexusUrl = updatedMod.nexusUrl;
+        it->itchGameId = updatedMod.itchGameId;
+        it->itchUrl = updatedMod.itchUrl;
+        it->version = updatedMod.version;
+        it->author = updatedMod.author;
+        it->installDate = updatedMod.installDate;
+        it->uploadDate = updatedMod.uploadDate;
+        it->fileName = updatedMod.fileName;
+        it->ignoredItchUploadIds = updatedMod.ignoredItchUploadIds;
+
+        if (fileNameChanged) {
+            oldPath = m_modsStoragePath + "/" + oldFileName;
+            newPath = m_modsStoragePath + "/" + updatedMod.fileName;
+        }
     }
 
-    QString oldFileName = it->fileName;
-    bool fileNameChanged = (oldFileName != updatedMod.fileName);
-
-    it->name = updatedMod.name;
-    it->description = updatedMod.description;
-    it->nexusModId = updatedMod.nexusModId;
-    it->nexusFileId = updatedMod.nexusFileId;
-    it->nexusUrl = updatedMod.nexusUrl;
-    it->itchGameId = updatedMod.itchGameId;
-    it->itchUrl = updatedMod.itchUrl;
-    it->version = updatedMod.version;
-    it->author = updatedMod.author;
-    it->installDate = updatedMod.installDate;
-    it->uploadDate = updatedMod.uploadDate;
-    it->fileName = updatedMod.fileName;
-    it->ignoredItchUploadIds = updatedMod.ignoredItchUploadIds;
-
     if (fileNameChanged) {
-        QString oldPath = m_modsStoragePath + "/" + oldFileName;
-        QString newPath = m_modsStoragePath + "/" + updatedMod.fileName;
-        locker.unlock();
-
         if (QFile::exists(oldPath) && oldPath != newPath) {
             QFile::rename(oldPath, newPath);
         }
 
-        locker.relock();
-        auto it2 = std::find_if(m_mods.begin(), m_mods.end(),
+        QMutexLocker locker(&m_modsMutex);
+        auto it2 = std::ranges::find_if(m_mods,
                                [&updatedMod](const ModInfo &mod) { return mod.id == updatedMod.id; });
         if (it2 != m_mods.end() && it2->enabled) {
             it2->numberedFileName = generateNumberedFileName(it2->priority, updatedMod.fileName);
             renumberEnabledMods();
         }
     }
-    locker.unlock();
 
     saveMods();
     emit modsChanged();
@@ -591,7 +592,7 @@ QList<ModInfo> ModManager::getMods() const {
 
 ModInfo ModManager::getMod(const QString &modId) const {
     QMutexLocker locker(&m_modsMutex);
-    auto it = std::find_if(m_mods.begin(), m_mods.end(),
+    auto it = std::ranges::find_if(m_mods,
                            [&modId](const ModInfo &mod) { return mod.id == modId; });
     return it != m_mods.end() ? *it : ModInfo();
 }
@@ -631,12 +632,13 @@ bool ModManager::loadMods() {
 }
 
 bool ModManager::saveMods() {
-    QMutexLocker locker(&m_modsMutex);
     QJsonArray array;
-    for (const ModInfo &mod : m_mods) {
-        array.append(mod.toJson());
+    {
+        QMutexLocker locker(&m_modsMutex);
+        for (const ModInfo &mod : m_mods) {
+            array.append(mod.toJson());
+        }
     }
-    locker.unlock();
 
     QJsonDocument doc(array);
     QString metadataPath = getMetadataFilePath();
@@ -656,7 +658,7 @@ bool ModManager::saveMods() {
 
 QString ModManager::getModFilePath(const QString &modId) const {
     QMutexLocker locker(&m_modsMutex);
-    auto it = std::find_if(m_mods.begin(), m_mods.end(),
+    auto it = std::ranges::find_if(m_mods,
                            [&modId](const ModInfo &mod) { return mod.id == modId; });
 
     if (it != m_mods.end()) {
@@ -710,7 +712,7 @@ bool ModManager::copyModToPaks(const ModInfo &mod) {
 
     {
         QMutexLocker locker(&m_modsMutex);
-        auto it = std::find_if(m_mods.begin(), m_mods.end(),
+        auto it = std::ranges::find_if(m_mods,
                                [&mod](const ModInfo &m) { return m.id == mod.id; });
         if (it != m_mods.end()) {
             it->numberedFileName = numberedName;
@@ -759,7 +761,7 @@ void ModManager::sortModsByPriority() {
 }
 
 QString ModManager::generateNumberedFileName(int priority, const QString &originalFileName) const {
-    QString number = QString("%1").arg(priority, 3, 10, QChar('0'));
+    QString number = QString("%1").arg(priority, PriorityPadWidth, 10, QChar('0'));
 
     if (originalFileName.startsWith("War-WindowsNoEditor", Qt::CaseInsensitive)) {
         QString remaining = originalFileName.mid(19);
@@ -814,7 +816,7 @@ void ModManager::renumberEnabledMods() {
             if (!QFile::exists(expectedPath) && QFile::exists(sourcePath)) {
                 QFile::copy(sourcePath, expectedPath);
                 QMutexLocker locker(&m_modsMutex);
-                auto it = std::find_if(m_mods.begin(), m_mods.end(),
+                auto it = std::ranges::find_if(m_mods,
                                        [&mod](const ModInfo &item) { return item.id == mod.id; });
                 if (it != m_mods.end()) {
                     it->numberedFileName = newNumberedName;
@@ -841,7 +843,7 @@ void ModManager::renumberEnabledMods() {
         if (QFile::exists(sourcePath)) {
             QFile::copy(sourcePath, expectedPath);
             QMutexLocker locker(&m_modsMutex);
-            auto it = std::find_if(m_mods.begin(), m_mods.end(),
+            auto it = std::ranges::find_if(m_mods,
                                    [&mod](const ModInfo &item) { return item.id == mod.id; });
             if (it != m_mods.end()) {
                 it->numberedFileName = newNumberedName;

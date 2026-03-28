@@ -9,6 +9,7 @@
 #include <QDebug>
 #include <QSslSocket>
 #include <QMetaObject>
+#include <algorithm>
 
 namespace {
 void emitDownloadFinishedQueued(UpdaterService *service, const QString &path) {
@@ -21,9 +22,82 @@ void emitDownloadFinishedQueued(UpdaterService *service, const QString &path) {
 }
 }
 
-static QString trimmed(const QString& s) {
-    auto t = s.trimmed();
-    return t;
+QString UpdaterService::SemVer::toString() const {
+    QString s = QStringLiteral("%1.%2.%3").arg(major).arg(minor).arg(patch);
+    if (!preRelease.isEmpty()) {
+        s += QLatin1Char('-') + preRelease;
+    }
+    return s;
+}
+
+UpdaterService::SemVer UpdaterService::SemVer::fromString(const QString& s) {
+    QString t = s.trimmed();
+    if (t.startsWith(QLatin1Char('v')) || t.startsWith(QLatin1Char('V'))) {
+        t = t.mid(1);
+    }
+
+    SemVer result;
+    const int dashIdx = t.indexOf(QLatin1Char('-'));
+    const QString numericPart = dashIdx >= 0 ? t.left(dashIdx) : t;
+    result.preRelease = dashIdx >= 0 ? t.mid(dashIdx + 1) : QString();
+
+    const QStringList parts = numericPart.split(QLatin1Char('.'));
+    bool ok = false;
+    if (parts.size() >= 1) {
+        result.major = parts[0].toInt(&ok);
+        if (!ok) return {};
+    }
+    if (parts.size() >= 2) {
+        result.minor = parts[1].toInt(&ok);
+        if (!ok) return {};
+    }
+    if (parts.size() >= 3) {
+        result.patch = parts[2].toInt(&ok);
+        if (!ok) return {};
+    }
+    return result;
+}
+
+// Implements SemVer spec item 11 precedence rules.
+int UpdaterService::SemVer::compare(const SemVer& a, const SemVer& b) {
+    // 11.1 / 11.2: compare major, minor, patch numerically
+    if (a.major != b.major) return a.major - b.major;
+    if (a.minor != b.minor) return a.minor - b.minor;
+    if (a.patch != b.patch) return a.patch - b.patch;
+
+    // 11.3: a pre-release version has lower precedence than the associated normal version
+    if (a.preRelease.isEmpty() && b.preRelease.isEmpty()) return 0;
+    if (a.preRelease.isEmpty()) return 1;   // a is normal release, b is pre-release: a > b
+    if (b.preRelease.isEmpty()) return -1;  // b is normal release, a is pre-release: a < b
+
+    // 11.4: compare pre-release identifiers left-to-right, dot-separated
+    const QStringList aIds = a.preRelease.split(QLatin1Char('.'));
+    const QStringList bIds = b.preRelease.split(QLatin1Char('.'));
+    const int minCount = std::min(aIds.size(), bIds.size());
+
+    for (int i = 0; i < minCount; ++i) {
+        const QString& aId = aIds[i];
+        const QString& bId = bIds[i];
+
+        bool aIsNum = false;
+        bool bIsNum = false;
+        const int aNum = aId.toInt(&aIsNum);
+        const int bNum = bId.toInt(&bIsNum);
+
+        if (aIsNum && bIsNum) {
+            // 11.4.1.1: identifiers of only digits compared numerically
+            if (aNum != bNum) return aNum - bNum;
+        } else if (!aIsNum && !bIsNum) {
+            // 11.4.1.2: identifiers with letters compared lexically in ASCII
+            if (aId != bId) return aId < bId ? -1 : 1;
+        } else {
+            // 11.4.1.3: numeric identifiers have lower precedence than alphanumeric
+            return aIsNum ? -1 : 1;
+        }
+    }
+
+    // 11.4.4: larger set of fields has higher precedence
+    return aIds.size() - bIds.size();
 }
 
 UpdaterService::UpdaterService(QString owner, QString repo, QObject* parent)
@@ -47,11 +121,11 @@ void UpdaterService::setIncludePrereleases(bool include) {
     m_includePrereleases = include;
 }
 
-QVersionNumber UpdaterService::currentVersion() const {
+UpdaterService::SemVer UpdaterService::currentVersion() const {
 #ifdef TRENCHKIT_VERSION
-    return QVersionNumber::fromString(QStringLiteral(TRENCHKIT_VERSION));
+    return SemVer::fromString(QStringLiteral(TRENCHKIT_VERSION));
 #else
-    return QVersionNumber::fromString(QStringLiteral("0.0.0"));
+    return SemVer::fromString(QStringLiteral("0.0.0"));
 #endif
 }
 
@@ -63,19 +137,12 @@ QNetworkRequest UpdaterService::makeRequest(const QUrl& url) const {
     if (!m_authToken.isEmpty()) {
         req.setRawHeader("Authorization", QByteArray("Bearer ") + m_authToken.toUtf8());
     }
+    req.setTransferTimeout(30000);
     return req;
 }
 
-QVersionNumber UpdaterService::parseVersionFromTag(const QString& tag) {
-    QString t = trimmed(tag);
-    if (t.startsWith('v') || t.startsWith('V')) t = t.mid(1);
-    QString cleaned;
-    cleaned.reserve(t.size());
-    for (QChar c : t) {
-        if (c.isDigit() || c == '.') cleaned.append(c);
-        else break;
-    }
-    return QVersionNumber::fromString(cleaned);
+UpdaterService::SemVer UpdaterService::parseVersionFromTag(const QString& tag) {
+    return SemVer::fromString(tag);
 }
 
 void UpdaterService::checkForUpdates() {
@@ -207,7 +274,7 @@ void UpdaterService::handleReleaseJson(const QByteArray& json) {
     }
 
     const auto cur = currentVersion();
-    if (!info.version.isNull() && QVersionNumber::compare(info.version, cur) > 0) {
+    if (!info.version.isNull() && SemVer::compare(info.version, cur) > 0) {
         emit updateAvailable(info);
     } else {
         emit upToDate(info);

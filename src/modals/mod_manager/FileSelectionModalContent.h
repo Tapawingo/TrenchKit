@@ -1,3 +1,5 @@
+/// @file FileSelectionModalContent.h
+/// @brief Modal for selecting one or more files or items from a list.
 #ifndef FILESELECTIONMODALCONTENT_H
 #define FILESELECTIONMODALCONTENT_H
 
@@ -11,11 +13,17 @@ class QListWidget;
 class QLabel;
 class QPushButton;
 
+/// @brief Generic list item with an opaque ID and a display string.
 struct FileItem {
     QString id;
     QString displayText;
 };
 
+/// @brief Presents a list of files or generic items for single or multi-selection.
+///
+/// Two constructors: one for a simple list of pak file paths, and one for a
+/// list of @c FileItem entries with arbitrary IDs. Optionally shows an
+/// "Ignore All" button (emits @c allIgnored) for upload-selection scenarios.
 class FileSelectionModalContent : public BaseModalContent {
     Q_OBJECT
 
@@ -41,6 +49,7 @@ public slots:
     void ignoreAll();
 
 signals:
+    /// @brief Emitted when the user clicks "Ignore All".
     void allIgnored();
 
 protected:

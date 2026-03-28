@@ -828,12 +828,17 @@ bool ProfileManager::importProfile(const QString &filePath, QString &importedPro
 
         if (existingMod.id.isEmpty()) {
         const QList<ModInfo> beforeMods = m_modManager->getMods();
-        if (!m_modManager->addMod(pakPath, QString(),
-                                  meta.nexusModId, meta.nexusFileId,
-                                  meta.nexusUrl,
-                                  meta.author, meta.description, meta.version,
-                                  meta.itchGameId, meta.itchUrl,
-                                  meta.uploadDate)) {
+        if (!m_modManager->addMod(pakPath, {
+                .nexusModId = meta.nexusModId,
+                .nexusFileId = meta.nexusFileId,
+                .nexusUrl = meta.nexusUrl,
+                .author = meta.author,
+                .description = meta.description,
+                .version = meta.version,
+                .itchGameId = meta.itchGameId,
+                .itchUrl = meta.itchUrl,
+                .uploadDate = meta.uploadDate
+            })) {
             return false;
         }
 
@@ -890,12 +895,18 @@ bool ProfileManager::importProfile(const QString &filePath, QString &importedPro
         } while (true);
 
         const QList<ModInfo> beforeMods = m_modManager->getMods();
-        if (!m_modManager->addMod(pakPath, candidateName,
-                                  meta.nexusModId, meta.nexusFileId,
-                                  meta.nexusUrl,
-                                  meta.author, meta.description, meta.version,
-                                  meta.itchGameId, meta.itchUrl,
-                                  meta.uploadDate)) {
+        if (!m_modManager->addMod(pakPath, {
+                .name = candidateName,
+                .nexusModId = meta.nexusModId,
+                .nexusFileId = meta.nexusFileId,
+                .nexusUrl = meta.nexusUrl,
+                .author = meta.author,
+                .description = meta.description,
+                .version = meta.version,
+                .itchGameId = meta.itchGameId,
+                .itchUrl = meta.itchUrl,
+                .uploadDate = meta.uploadDate
+            })) {
             return false;
         }
 

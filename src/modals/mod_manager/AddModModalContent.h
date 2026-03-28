@@ -1,3 +1,5 @@
+/// @file AddModModalContent.h
+/// @brief Modal for adding mods via local file, NexusMods URL, or itch.io URL.
 #ifndef ADDMODMODALCONTENT_H
 #define ADDMODMODALCONTENT_H
 
@@ -18,6 +20,11 @@ class QPushButton;
 class QLabel;
 class QProgressBar;
 
+/// @brief Entry-point modal for adding new mods.
+///
+/// Presents three paths: File (pak or archive), NexusMods URL, and itch.io URL.
+/// Each path opens a sub-modal that collects the required metadata, which is
+/// then handed back to this modal for batch processing.
 class AddModModalContent : public BaseModalContent {
     Q_OBJECT
 
@@ -43,6 +50,7 @@ protected:
     void changeEvent(QEvent *event) override;
 
 private:
+    /// @brief Aggregated metadata for one pak file queued for installation.
     struct FileToProcess {
         QString filePath;
         QString nexusModId;

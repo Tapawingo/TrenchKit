@@ -278,7 +278,7 @@ void NexusDownloadModalContent::startDownloadProcess() {
     m_client->getModInfo(m_currentModId);
 }
 
-void NexusDownloadModalContent::onModInfoReceived(const QString &author, const QString &description, const QString &version) {
+void NexusDownloadModalContent::onModInfoReceived(const QString &author, const QString &description, const QString &) {
     m_author = author;
     m_description = description;
 

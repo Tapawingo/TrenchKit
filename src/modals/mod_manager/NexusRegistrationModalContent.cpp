@@ -181,7 +181,7 @@ void NexusRegistrationModalContent::onAuthFailed(const QString &error) {
     m_authenticateButton->setEnabled(true);
 }
 
-void NexusRegistrationModalContent::onModInfoReceived(const QString &author, const QString &description, const QString &version) {
+void NexusRegistrationModalContent::onModInfoReceived(const QString &author, const QString &description, const QString &) {
     m_author = author;
     m_description = description;
 

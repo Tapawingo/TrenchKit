@@ -1,3 +1,5 @@
+/// @file ItchRegistrationModalContent.h
+/// @brief Modal for linking an existing local mod to an itch.io game page.
 #ifndef ITCHREGISTRATIONMODALCONTENT_H
 #define ITCHREGISTRATIONMODALCONTENT_H
 
@@ -15,6 +17,11 @@ class QLabel;
 class QStackedWidget;
 class QListWidget;
 
+/// @brief Links an already-installed mod to its itch.io game page (metadata only; no re-download).
+///
+/// The user enters an itch.io URL; the modal fetches game info and upload listings.
+/// On @c Accepted, call the result getters to obtain the itch.io metadata to
+/// write back to the mod's @c ModInfo.
 class ItchRegistrationModalContent : public BaseModalContent {
     Q_OBJECT
 

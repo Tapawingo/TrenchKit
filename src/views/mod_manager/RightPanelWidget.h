@@ -1,3 +1,5 @@
+/// @file RightPanelWidget.h
+/// @brief Right-side panel that aggregates the actions, backup, launch, and activity log widgets.
 #ifndef RIGHTPANELWIDGET_H
 #define RIGHTPANELWIDGET_H
 
@@ -12,6 +14,8 @@ class BackupWidget;
 class LaunchWidget;
 class ActivityLogWidget;
 
+/// @brief Container widget that hosts @c ActionsWidget, @c BackupWidget, @c LaunchWidget,
+/// and @c ActivityLogWidget in a vertical stack.
 class RightPanelWidget : public QWidget {
     Q_OBJECT
 
@@ -23,6 +27,7 @@ public:
     void setModalManager(ModalManager *modalManager);
     void setFoxholeInstallPath(const QString &path);
 
+    /// @brief Returns the activity log widget; used by @c MainWindow to add log entries.
     ActivityLogWidget* getActivityLog() const { return m_activityLogWidget; }
 
 protected:

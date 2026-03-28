@@ -47,7 +47,6 @@ ModListWidget::ModListWidget(QWidget *parent)
     , m_loadingLabel(new QLabel(this))
     , m_modCountLabel(new QLabel(this))
     , m_loadingTimer(new QTimer(this))
-    , m_conflictDetector(nullptr)
 {
     setupUi();
 
@@ -1274,7 +1273,7 @@ void ModListWidget::handlePakFile(const QString &pakPath) {
     QFileInfo fileInfo(pakPath);
     QString modName = fileInfo.baseName();
 
-    if (!m_modManager->addMod(pakPath, modName)) {
+    if (!m_modManager->addMod(pakPath, {.name = modName})) {
         MessageModal::warning(m_modalManager, "Error",
                             "Failed to add mod: " + modName);
     } else {

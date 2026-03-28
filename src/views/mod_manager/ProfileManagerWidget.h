@@ -1,3 +1,5 @@
+/// @file ProfileManagerWidget.h
+/// @brief Panel widget for creating, loading, updating, and managing mod profiles.
 #ifndef PROFILEMANAGERWIDGET_H
 #define PROFILEMANAGERWIDGET_H
 
@@ -14,6 +16,11 @@ class ProfileManager;
 class ModalManager;
 class DraggableProfileList;
 
+/// @brief Displays the profile list and provides controls for all profile operations.
+///
+/// Services are injected via setters. @c importProfileFromPath() is the
+/// programmatic entry point for importing a .tkprofile file (e.g. from a
+/// file-association launch).
 class ProfileManagerWidget : public QWidget {
     Q_OBJECT
 
@@ -24,6 +31,7 @@ public:
     void setProfileManager(ProfileManager *profileManager);
     void setModalManager(ModalManager *modalManager) { m_modalManager = modalManager; }
     void refreshProfileList();
+    /// @brief Imports a .tkprofile archive from @p filePath; shows conflict resolution if needed.
     bool importProfileFromPath(const QString &filePath);
 
 protected:

@@ -9,14 +9,19 @@
 #include <windows.h>
 #endif
 
+static int run(int argc, char *argv[]);
+
 #ifdef _WIN32
-int main(int argc, char *argv[]);
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    return main(__argc, __argv);
+    return run(__argc, __argv);
 }
 #endif
 
 int main(int argc, char *argv[]) {
+    return run(argc, argv);
+}
+
+static int run(int argc, char *argv[]) {
 #ifdef _WIN32
     // Create named mutex to signal app is running (used by updater to wait for exit)
     HANDLE hMutex = CreateMutexW(nullptr, FALSE, L"Global\\TrenchKitRunning");

@@ -310,6 +310,7 @@ QNetworkRequest NexusModsClient::makeRequest(const QUrl &url) const {
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("TrenchKit/1.0.1"));
     request.setRawHeader("apikey", m_apiKey.toUtf8());
+    request.setTransferTimeout(30000);
     return request;
 }
 

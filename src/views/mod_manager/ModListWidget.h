@@ -1,3 +1,5 @@
+/// @file ModListWidget.h
+/// @brief Main mod list panel; displays, filters, and manages all installed mods.
 #ifndef MODLISTWIDGET_H
 #define MODLISTWIDGET_H
 
@@ -29,6 +31,11 @@ struct ConflictInfo;
 struct NexusFileInfo;
 struct ItchUploadInfo;
 
+/// @brief Widget that hosts the mod list, search bar, and all mod-management actions.
+///
+/// Services are injected via setters after construction. Call @c refreshModList()
+/// to rebuild the list from @c ModManager, and @c rescanConflicts() to re-run
+/// the conflict detector.
 class ModListWidget : public QWidget {
     Q_OBJECT
 
@@ -42,11 +49,13 @@ public:
     void setUpdateService(ModUpdateService *service);
     void setItchUpdateService(ItchModUpdateService *service);
     void setModalManager(ModalManager *modalManager) { m_modalManager = modalManager; }
+    /// @brief Rebuilds the displayed list from the current @c ModManager state.
     void refreshModList();
     void rescanConflicts();
     void setLoadingState(bool loading, const QString &message = "Loading mods");
 
 signals:
+    /// @brief Emitted when the selection changes; @p selectedRow is -1 when nothing is selected.
     void modSelectionChanged(int selectedRow, int totalMods);
     void modAdded(const QString &modName);
     void modRemoved(const QString &modName);
@@ -58,6 +67,7 @@ public slots:
     void onMoveUpClicked();
     void onMoveDownClicked();
     void onCheckUpdatesClicked();
+    /// @brief Shows and focuses the search bar.
     void activateSearch();
 
 protected:

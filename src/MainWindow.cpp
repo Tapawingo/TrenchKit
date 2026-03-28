@@ -152,9 +152,6 @@ void MainWindow::showEvent(QShowEvent *event) {
 }
 
 void MainWindow::changeEvent(QEvent *event) {
-    if (event->type() == QEvent::LanguageChange) {
-        ui->titleBar->setTitle(tr("TrenchKit - Foxhole Mod Manager"));
-    }
     QMainWindow::changeEvent(event);
 }
 
@@ -192,8 +189,6 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
 }
 
 void MainWindow::setupTitleBar() {
-    ui->titleBar->setTitle(tr("TrenchKit - Foxhole Mod Manager"));
-    ui->titleBar->setIcon(QIcon(":/icon.png"));
     ui->titleBar->setUpdateVisible(false);
 
     connect(ui->titleBar, &TitleBar::minimizeClicked, this, &MainWindow::onMinimizeClicked);
@@ -233,7 +228,7 @@ void MainWindow::setupProfileManager() {
     ActivityLogWidget *log = m_rightPanelWidget->getActivityLog();
 
     connect(m_profileManagerWidget, &ProfileManagerWidget::profileLoadRequested,
-            this, [this, log](const QString &profileId) {
+            this, [this, log](const QString &) {
         m_modListWidget->refreshModList();
         log->addLogEntry(tr("Profile Loaded"), ActivityLogWidget::LogLevel::Info);
     });

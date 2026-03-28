@@ -1,15 +1,39 @@
 cmake_minimum_required(VERSION 3.24)
 
+include(cmake/version.cmake)
+
 project(TrenchKit
-  VERSION 1.2.0
+  VERSION ${TRENCHKIT_VERSION_MAJOR}.${TRENCHKIT_VERSION_MINOR}.${TRENCHKIT_VERSION_PATCH}
   LANGUAGES CXX
 )
+
+if(TRENCHKIT_VERSION_PRERELEASE)
+    set(TRENCHKIT_FULL_VERSION "${PROJECT_VERSION}-${TRENCHKIT_VERSION_PRERELEASE}")
+else()
+    set(TRENCHKIT_FULL_VERSION "${PROJECT_VERSION}")
+endif()
 
 enable_testing()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Sanitizer build types
+set(CMAKE_CXX_FLAGS_ASAN
+    "-g -O1 -fsanitize=address -fno-omit-frame-pointer"
+    CACHE STRING "Flags for ASan build" FORCE
+)
+set(CMAKE_CXX_FLAGS_UBSAN
+    "-g -O1 -fsanitize=undefined -fno-omit-frame-pointer"
+    CACHE STRING "Flags for UBSan build" FORCE
+)
+set(CMAKE_CXX_FLAGS_TSAN
+    "-g -O1 -fsanitize=thread -fno-omit-frame-pointer"
+    CACHE STRING "Flags for TSan build" FORCE
+)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)

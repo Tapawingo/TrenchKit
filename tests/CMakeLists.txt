@@ -164,6 +164,8 @@ add_test(
   COMMAND $<TARGET_FILE:TrenchKit> --smoke-test
 )
 
-set_tests_properties(ui_smoke PROPERTIES
-  ENVIRONMENT "QT_QPA_PLATFORM=windows"
-)
+if(WIN32)
+  set_tests_properties(ui_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=windows")
+else()
+  set_tests_properties(ui_smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()

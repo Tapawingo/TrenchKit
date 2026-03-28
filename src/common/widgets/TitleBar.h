@@ -1,3 +1,5 @@
+/// @file TitleBar.h
+/// @brief Custom frameless title bar with drag support and window action buttons.
 #ifndef TITLEBAR_H
 #define TITLEBAR_H
 
@@ -8,6 +10,11 @@ class QLabel;
 class QPushButton;
 class QHBoxLayout;
 
+/// @brief Replaces the native window title bar; supports click-and-drag window movement.
+///
+/// Shows the application icon, title, an optional update indicator button,
+/// and minimize/close controls. Connect to the signals to handle actions in
+/// @c MainWindow.
 class TitleBar : public QWidget {
     Q_OBJECT
 
@@ -15,8 +22,7 @@ public:
     explicit TitleBar(QWidget *parent = nullptr);
     ~TitleBar() override = default;
 
-    void setTitle(const QString &title);
-    void setIcon(const QIcon &icon);
+    /// @brief Shows or hides the update notification button.
     void setUpdateVisible(bool visible);
 
 signals:

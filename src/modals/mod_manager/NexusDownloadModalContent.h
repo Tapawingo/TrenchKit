@@ -1,3 +1,5 @@
+/// @file NexusDownloadModalContent.h
+/// @brief Modal for downloading mods from NexusMods URLs.
 #ifndef NEXUSDOWNLOADMODALCONTENT_H
 #define NEXUSDOWNLOADMODALCONTENT_H
 
@@ -16,15 +18,22 @@ class QProgressBar;
 class QLabel;
 class QStackedWidget;
 
+/// @brief Aggregated result for one downloaded NexusMods file.
 struct NexusDownloadResult {
-    QString filePath;
-    QString modId;
-    QString url;
+    QString filePath;   ///< Local path of the downloaded pak file.
+    QString modId;      ///< NexusMods mod ID.
+    QString url;        ///< Source NexusMods URL.
     NexusFileInfo fileInfo;
     QString author;
     QString description;
 };
 
+/// @brief Three-page modal (Input → Auth → Download) for NexusMods mod downloads.
+///
+/// Accepts one or more NexusMods mod/file URLs, optionally runs the SSO auth
+/// flow if no API key is stored, then downloads and saves the pak files.
+/// Call the result getters after @c Accepted to retrieve downloaded file paths
+/// and metadata.
 class NexusDownloadModalContent : public BaseModalContent {
     Q_OBJECT
 
@@ -58,6 +67,7 @@ protected:
     void changeEvent(QEvent *event) override;
 
 private:
+    /// @brief One queued mod/file URL awaiting download.
     struct PendingMod {
         QString modId;
         QString fileId;
