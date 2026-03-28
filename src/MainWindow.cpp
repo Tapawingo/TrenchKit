@@ -35,6 +35,10 @@
 #include <QStandardPaths>
 #include <QMetaObject>
 #include <QShortcut>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <windowsx.h>
+#endif
 
 namespace {
 QString defaultUpdatesDir() {
@@ -132,10 +136,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_syncWatcher = new QFutureWatcher<void>(this);
 
-    QSize windowSize(1000, 700);
-    setMinimumSize(windowSize);
-    setMaximumSize(windowSize);
-    resize(windowSize);
+    setMinimumSize(800, 560);
+    resize(1000, 700);
 
     // Add initial log entry
     ActivityLogWidget *log = m_rightPanelWidget->getActivityLog();
@@ -160,6 +162,9 @@ void MainWindow::showEvent(QShowEvent *event) {
 
 void MainWindow::changeEvent(QEvent *event) {
     QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange) {
+        ui->titleBar->setMaximized(isMaximized());
+    }
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
@@ -199,6 +204,7 @@ void MainWindow::setupTitleBar() {
     ui->titleBar->setUpdateVisible(false);
 
     connect(ui->titleBar, &TitleBar::minimizeClicked, this, &MainWindow::onMinimizeClicked);
+    connect(ui->titleBar, &TitleBar::maximizeClicked, this, &MainWindow::onMaximizeClicked);
     connect(ui->titleBar, &TitleBar::closeClicked, this, &MainWindow::onCloseClicked);
     connect(ui->titleBar, &TitleBar::updateClicked, this, &MainWindow::onUpdateClicked);
     connect(ui->titleBar, &TitleBar::settingsClicked, this, &MainWindow::onSettingsClicked);
@@ -206,6 +212,44 @@ void MainWindow::setupTitleBar() {
 
 void MainWindow::onMinimizeClicked() {
     showMinimized();
+}
+
+void MainWindow::onMaximizeClicked() {
+    if (isMaximized()) {
+        showNormal();
+    } else {
+        showMaximized();
+    }
+}
+
+bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result) {
+#ifdef Q_OS_WIN
+    if (eventType == "windows_generic_MSG") {
+        MSG *msg = static_cast<MSG *>(message);
+        if (msg->message == WM_NCHITTEST && !isMaximized()) {
+            const qreal dpr = devicePixelRatio();
+            const int gx = static_cast<int>(GET_X_LPARAM(msg->lParam) / dpr);
+            const int gy = static_cast<int>(GET_Y_LPARAM(msg->lParam) / dpr);
+            const QRect r = frameGeometry();
+            constexpr int B = 8;
+
+            const bool l   = gx >= r.left()      && gx <  r.left()   + B;
+            const bool rr  = gx >  r.right() - B && gx <= r.right();
+            const bool t   = gy >= r.top()        && gy <  r.top()    + B;
+            const bool bot = gy >  r.bottom() - B && gy <= r.bottom();
+
+            if      (t   && l)  { *result = HTTOPLEFT;     return true; }
+            else if (t   && rr) { *result = HTTOPRIGHT;    return true; }
+            else if (bot && l)  { *result = HTBOTTOMLEFT;  return true; }
+            else if (bot && rr) { *result = HTBOTTOMRIGHT; return true; }
+            else if (l)         { *result = HTLEFT;        return true; }
+            else if (rr)        { *result = HTRIGHT;       return true; }
+            else if (t)         { *result = HTTOP;         return true; }
+            else if (bot)       { *result = HTBOTTOM;      return true; }
+        }
+    }
+#endif
+    return QMainWindow::nativeEvent(eventType, message, result);
 }
 
 void MainWindow::onCloseClicked() {

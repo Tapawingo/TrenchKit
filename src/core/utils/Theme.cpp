@@ -65,7 +65,7 @@ QString Theme::getStyleSheet() {
         #titleBar {
             background-color: #2c2c2c;
         }
-        #minimizeButton, #closeButton {
+        #minimizeButton, #maximizeButton, #closeButton {
             background-color: transparent;
             color: #e1d0ab;
             border: none;
@@ -75,13 +75,16 @@ QString Theme::getStyleSheet() {
             padding: 0px;
             text-align: center;
         }
+        #maximizeButton {
+            font-size: 18px;
+        }
         #settingsButton, #updateButton {
             background-color: transparent;
             border: none;
             border-left: 1px solid rgba(225, 209, 173, 0.25);
             padding: 0px;
         }
-        #minimizeButton:hover, #settingsButton:hover, #updateButton:hover {
+        #minimizeButton:hover, #maximizeButton:hover, #settingsButton:hover, #updateButton:hover {
             background-color: #404040;
         }
         #closeButton:hover {

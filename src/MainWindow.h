@@ -50,9 +50,11 @@ protected:
     void showEvent(QShowEvent *event) override;
     void changeEvent(QEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
 private slots:
     void onMinimizeClicked();
+    void onMaximizeClicked();
     void onCloseClicked();
     void onInstallPathChanged(const QString &path);
     void onModsLoadComplete();

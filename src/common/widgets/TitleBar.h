@@ -24,10 +24,13 @@ public:
 
     /// @brief Shows or hides the update notification button.
     void setUpdateVisible(bool visible);
+    /// @brief Updates the maximize/restore button to reflect the current window state.
+    void setMaximized(bool maximized);
 
 signals:
     void updateClicked();
     void settingsClicked();
+    void maximizeClicked();
     void closeClicked();
     void minimizeClicked();
 
@@ -35,6 +38,7 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
 
 private:
     void setupUi();
@@ -44,6 +48,7 @@ private:
     QLabel *m_titleLabel;
     QPushButton *m_updateButton;
     QPushButton *m_settingsButton;
+    QPushButton *m_maximizeButton;
     QPushButton *m_minimizeButton;
     QPushButton *m_closeButton;
     QHBoxLayout *m_layout;
