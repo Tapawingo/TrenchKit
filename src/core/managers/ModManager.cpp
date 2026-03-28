@@ -56,7 +56,7 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
 
     if (!params.name.isEmpty()) {
         mod.fileName = params.name + fileInfo.suffix().prepend('.');
-        mod.name = params.name;
+        mod.name = cleanModName(params.name);
     } else {
         mod.fileName = fileInfo.fileName();
         mod.name = cleanModName(fileInfo.fileName());
@@ -1049,6 +1049,10 @@ QString ModManager::cleanModName(const QString &fileName) const {
 
     baseName.replace(QStringLiteral("War-WindowsNoEditor"), QString(), Qt::CaseInsensitive);
     baseName.replace(QStringLiteral("WindowsNoEditor"), QString(), Qt::CaseInsensitive);
+
+    // Split CamelCase: "MyAwesomeMod" → "My Awesome Mod"
+    static const QRegularExpression camelCase(QStringLiteral("([a-z])([A-Z])"));
+    baseName.replace(camelCase, QStringLiteral("\\1 \\2"));
 
     baseName.replace('_', ' ');
     baseName.replace('-', ' ');

@@ -96,6 +96,8 @@ public:
     void detectUnregisteredMods();
     /// @brief Reconciles the enabled state of all mods against the paks folder contents.
     void syncEnabledModsWithPaks();
+    /// @brief Produces a human-readable display name from a raw pak filename.
+    QString cleanModName(const QString &fileName) const;
 
 signals:
     /// @brief Emitted after any change to the mod list or load order.
@@ -116,7 +118,6 @@ private:
     QString generateNumberedFileName(int priority, const QString &originalFileName) const;
     void updateNumberedFileNames();
     void renumberEnabledMods();
-    QString cleanModName(const QString &fileName) const;
     bool isBaseGamePak(const QString &fileName) const;
 
     /// @brief Width of the zero-padded priority prefix (e.g. 3 → "001_").

@@ -323,7 +323,7 @@ void ItchDownloadModalContent::startNextGame() {
 void ItchDownloadModalContent::onGameIdReceived(const QString &gameId, const QString &title, const QString &author) {
     m_currentGameId = gameId;
     m_gameTitle = title;
-    m_author = author;
+    m_author = author.isEmpty() ? m_pendingCreator : author;
 
     if (m_pendingGames.size() > 1) {
         m_statusLabel->setText(tr("Game %1 of %2: Fetching file list...")
