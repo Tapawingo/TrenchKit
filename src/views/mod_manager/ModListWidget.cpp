@@ -69,8 +69,9 @@ void ModListWidget::setModManager(ModManager *modManager) {
                 this, &ModListWidget::onModsChanged);
         connect(m_modManager, &ModManager::errorOccurred,
                 this, [this](const QString &error) {
+            qWarning() << "ModManager:" << error;
             if (m_modalManager) {
-                MessageModal::warning(m_modalManager, "Error", error);
+                MessageModal::warning(m_modalManager, tr("Error"), error);
             }
         });
 
@@ -848,6 +849,10 @@ void ModListWidget::showSelectionContextMenu(const QPoint &globalPos) {
     QString singleModId = selectedCount == 1 ? modIds.first() : QString();
 
     QMenu menu(this);
+
+    QAction *verifyAction = menu.addAction(tr("Verify all mods"));
+    connect(verifyAction, &QAction::triggered, this, &ModListWidget::verifyModsRequested);
+    menu.addSeparator();
 
     QAction *enableSelected = menu.addAction(tr("Enable Selected"));
     QAction *disableSelected = menu.addAction(tr("Disable Selected"));

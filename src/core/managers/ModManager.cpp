@@ -145,7 +145,8 @@ bool ModManager::removeMod(const QString &modId) {
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
 
         if (it == m_mods.end()) {
-            emit errorOccurred(tr("Mod not found: %1").arg(modId));
+            qWarning() << "Mod not found:" << modId;
+            emit errorOccurred(tr("Mod not found."));
             return false;
         }
 
@@ -192,7 +193,8 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
 
         if (it == m_mods.end()) {
-            emit errorOccurred(tr("Mod not found: %1").arg(modId));
+            qWarning() << "Mod not found:" << modId;
+            emit errorOccurred(tr("Mod not found."));
             return false;
         }
 
@@ -289,7 +291,8 @@ bool ModManager::enableMod(const QString &modId) {
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
 
         if (it == m_mods.end()) {
-            emit errorOccurred(tr("Mod not found: %1").arg(modId));
+            qWarning() << "Mod not found:" << modId;
+            emit errorOccurred(tr("Mod not found."));
             return false;
         }
 
@@ -336,7 +339,8 @@ bool ModManager::disableMod(const QString &modId) {
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
 
         if (it == m_mods.end()) {
-            emit errorOccurred(tr("Mod not found: %1").arg(modId));
+            qWarning() << "Mod not found:" << modId;
+            emit errorOccurred(tr("Mod not found."));
             return false;
         }
 
@@ -537,7 +541,8 @@ bool ModManager::updateModMetadata(const ModInfo &updatedMod) {
                                [&updatedMod](const ModInfo &mod) { return mod.id == updatedMod.id; });
 
         if (it == m_mods.end()) {
-            emit errorOccurred(tr("Mod not found: %1").arg(updatedMod.id));
+            qWarning() << "Mod not found:" << updatedMod.id;
+            emit errorOccurred(tr("Mod not found."));
             return false;
         }
 
@@ -1042,6 +1047,19 @@ void ModManager::syncEnabledModsWithPaks() {
     // This ensures all enabled mods are properly numbered in the paks folder
     renumberEnabledMods();
     saveMods();
+}
+
+QList<ModManager::VerificationIssue> ModManager::verifyMods() const {
+    QList<VerificationIssue> issues;
+    QMutexLocker locker(&m_modsMutex);
+    for (const ModInfo &mod : m_mods) {
+        const QString path = m_modsStoragePath + "/" + mod.fileName;
+        if (!QFileInfo::exists(path)) {
+            issues.append({mod.id, mod.name,
+                tr("Pak file missing from storage: %1").arg(mod.fileName)});
+        }
+    }
+    return issues;
 }
 
 QString ModManager::cleanModName(const QString &fileName) const {

@@ -60,6 +60,7 @@ signals:
     void modAdded(const QString &modName);
     void modRemoved(const QString &modName);
     void modReordered();
+    void verifyModsRequested();
 
 public slots:
     void onAddModClicked();
