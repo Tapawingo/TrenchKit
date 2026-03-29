@@ -5,7 +5,6 @@
 #include "LaunchWidget.h"
 #include "core/utils/Theme.h"
 #include <QVBoxLayout>
-#include <QEvent>
 
 RightPanelWidget::RightPanelWidget(QWidget *parent)
     : QWidget(parent)
@@ -37,16 +36,6 @@ void RightPanelWidget::setFoxholeInstallPath(const QString &path) {
 
 void RightPanelWidget::onModSelectionChanged(int selectedRow, int totalMods) {
     m_actionsWidget->onModSelectionChanged(selectedRow, totalMods);
-}
-
-void RightPanelWidget::changeEvent(QEvent *event) {
-    if (event->type() == QEvent::LanguageChange) {
-        retranslateUi();
-    }
-    QWidget::changeEvent(event);
-}
-
-void RightPanelWidget::retranslateUi() {
 }
 
 void RightPanelWidget::setupUi() {

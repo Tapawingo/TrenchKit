@@ -5,7 +5,6 @@
 
 #include <QWidget>
 #include <QString>
-#include <QEvent>
 
 class ModManager;
 class ModalManager;
@@ -30,9 +29,6 @@ public:
     /// @brief Returns the activity log widget; used by @c MainWindow to add log entries.
     ActivityLogWidget* getActivityLog() const { return m_activityLogWidget; }
 
-protected:
-    void changeEvent(QEvent *event) override;
-
 signals:
     void addModRequested();
     void removeModRequested();
@@ -45,7 +41,6 @@ public slots:
 
 private:
     void setupUi();
-    void retranslateUi();
     void setupConnections();
 
     ModManager *m_modManager = nullptr;

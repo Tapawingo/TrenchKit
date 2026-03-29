@@ -256,7 +256,7 @@ void ModListWidget::refreshModList() {
         }
     }
 
-    for (int i = 0; i < filteredMods.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(filteredMods.size()); ++i) {
         const ModInfo &mod = filteredMods[i];
         auto *modRow = new ModRowWidget(mod, this);
         connect(modRow, &ModRowWidget::enabledChanged,
@@ -680,7 +680,7 @@ int ModListWidget::getSelectedRow() const {
 }
 
 int ModListWidget::getSelectedCount() const {
-    return m_modList ? m_modList->selectedItems().size() : 0;
+    return m_modList ? static_cast<int>(m_modList->selectedItems().size()) : 0;
 }
 
 void ModListWidget::setLoadingState(bool loading, const QString &message) {
@@ -845,7 +845,7 @@ void ModListWidget::showSelectionContextMenu(const QPoint &globalPos) {
         return;
     }
 
-    int selectedCount = modIds.size();
+    int selectedCount = static_cast<int>(modIds.size());
     QString singleModId = selectedCount == 1 ? modIds.first() : QString();
 
     QMenu menu(this);
@@ -1410,7 +1410,7 @@ void ModListWidget::startNexusRegistrationQueue(const QStringList &modIds) {
             });
 
             connect(modal, &BaseModalContent::finished, this, [index, showNext](int result) {
-                if (result == BaseModalContent::Rejected) {
+                if (result == static_cast<int>(BaseModalContent::Result::Rejected)) {
                     return;
                 }
                 (*index)++;
@@ -1451,7 +1451,7 @@ void ModListWidget::startItchRegistrationQueue(const QStringList &modIds) {
             });
 
             connect(modal, &BaseModalContent::finished, this, [index, showNext](int result) {
-                if (result == BaseModalContent::Rejected) {
+                if (result == static_cast<int>(BaseModalContent::Result::Rejected)) {
                     return;
                 }
                 (*index)++;

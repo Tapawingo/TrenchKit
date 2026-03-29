@@ -68,7 +68,7 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
 
     {
         QMutexLocker locker(&m_modsMutex);
-        mod.priority = m_mods.size();
+        mod.priority = static_cast<int>(m_mods.size());
     }
 
     mod.nexusModId = params.nexusModId;
@@ -539,7 +539,8 @@ bool ModManager::batchSetModPriorities(const QMap<QString, int> &priorityMap) {
 
 bool ModManager::updateModMetadata(const ModInfo &updatedMod) {
     bool fileNameChanged = false;
-    QString oldPath, newPath;
+    QString oldPath;
+    QString newPath;
 
     {
         QMutexLocker locker(&m_modsMutex);
@@ -788,7 +789,7 @@ QString ModManager::generateNumberedFileName(int priority, const QString &origin
 
 void ModManager::updateNumberedFileNames() {
     QMutexLocker locker(&m_modsMutex);
-    for (int i = 0; i < m_mods.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(m_mods.size()); ++i) {
         m_mods[i].numberedFileName = generateNumberedFileName(i, m_mods[i].fileName);
     }
 }
@@ -1018,7 +1019,7 @@ void ModManager::detectUnregisteredMods() {
             QMap<QString, int> seenMods;  // fileName.toLower() -> first index
             QList<int> indicesToRemove;
 
-            for (int i = 0; i < m_mods.size(); ++i) {
+            for (int i = 0; i < static_cast<int>(m_mods.size()); ++i) {
                 QString lowerFileName = m_mods[i].fileName.toLower();
                 if (seenMods.contains(lowerFileName)) {
                     int originalIndex = seenMods[lowerFileName];

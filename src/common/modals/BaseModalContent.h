@@ -21,7 +21,7 @@ class BaseModalContent : public QWidget {
 
 public:
     /// @brief Standardized result codes passed to @c finished().
-    enum Result {
+    enum class Result {
         Rejected = 0, ///< User cancelled or closed the dialog.
         Accepted = 1, ///< User confirmed the primary action.
         Custom   = 2  ///< Subclass-defined result (check subclass docs).
@@ -65,7 +65,7 @@ protected:
 private:
     void setupLayout();
 
-    Result m_result = Rejected;
+    Result m_result = Result::Rejected;
     QLabel *m_titleLabel;
     QWidget *m_headerWidget;
     QWidget *m_bodyWidget;

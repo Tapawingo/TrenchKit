@@ -168,15 +168,15 @@ void AddModModalContent::handleArchiveFile(const QString &archivePath, const QSt
             fileNames.append(QFileInfo(path).fileName());
         }
 
-        auto *fileModal = new FileSelectionModalContent(fileNames, QFileInfo(archivePath).fileName(), true);
+        auto * const fileModal = new FileSelectionModalContent(fileNames, QFileInfo(archivePath).fileName(), true);
         connect(fileModal, &FileSelectionModalContent::accepted, this, [this, result, fileModal, nexusModId, nexusFileId, nexusUrl, author, description, version, itchGameId, itchUrl, itchUploadId, uploadDate, isBatchProcessing]() {
             QStringList selectedFileNames = fileModal->getSelectedFiles();
             QStringList selectedPaks;
 
             for (const QString &fileName : selectedFileNames) {
-                for (const QString &path : result.pakFiles) {
-                    if (QFileInfo(path).fileName() == fileName) {
-                        selectedPaks.append(path);
+                for (const QString &pakPath : result.pakFiles) {
+                    if (QFileInfo(pakPath).fileName() == fileName) {
+                        selectedPaks.append(pakPath);
                         break;
                     }
                 }
@@ -278,7 +278,7 @@ void AddModModalContent::onFromNexusClicked() {
         return;
     }
 
-    auto *nexusModal = new NexusDownloadModalContent(m_nexusClient, m_nexusAuth, m_modalManager);
+    auto * const nexusModal = new NexusDownloadModalContent(m_nexusClient, m_nexusAuth, m_modalManager);
     connect(nexusModal, &NexusDownloadModalContent::accepted, this, [this, nexusModal]() {
         QList<NexusDownloadResult> results = nexusModal->getDownloadResults();
         if (results.isEmpty()) {
@@ -308,7 +308,7 @@ void AddModModalContent::onFromItchClicked() {
         return;
     }
 
-    auto *itchModal = new ItchDownloadModalContent(m_itchClient, m_itchAuth, m_modalManager);
+    auto * const itchModal = new ItchDownloadModalContent(m_itchClient, m_itchAuth, m_modalManager);
     connect(itchModal, &ItchDownloadModalContent::accepted, this, [this, itchModal]() {
         QList<ItchDownloadResult> results = itchModal->getDownloadResults();
         if (results.isEmpty()) {

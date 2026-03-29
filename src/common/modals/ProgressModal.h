@@ -35,9 +35,6 @@ signals:
     /// @brief Emitted when the user clicks the cancel button.
     void canceled();
 
-protected:
-    void changeEvent(QEvent *event) override;
-
 private:
     void setupUi(const QString &labelText, const QString &cancelButtonText);
 

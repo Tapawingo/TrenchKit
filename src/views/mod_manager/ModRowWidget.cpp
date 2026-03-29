@@ -423,7 +423,7 @@ QString ModRowWidget::formatConflictTooltip(const ConflictInfo &info) const {
 
     tooltip += QStringLiteral("<b>") + tr("Conflicts with:") + QStringLiteral("</b><br>");
 
-    for (int i = 0; i < info.conflictingModNames.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(info.conflictingModNames.size()); ++i) {
         QString modName = info.conflictingModNames[i];
         int otherPriority = info.conflictingModPriorities[i];
 
@@ -444,7 +444,7 @@ QString ModRowWidget::formatConflictTooltip(const ConflictInfo &info) const {
 
     if (!info.conflictingFilePaths.isEmpty()) {
         tooltip += QStringLiteral("<br><b>") + tr("Sample conflicts:") + QStringLiteral("</b><br>");
-        int sampleCount = qMin(5, info.conflictingFilePaths.size());
+        int sampleCount = qMin(5, static_cast<int>(info.conflictingFilePaths.size()));
         for (int i = 0; i < sampleCount; ++i) {
             const QString &filePath = info.conflictingFilePaths[i];
 
@@ -456,8 +456,8 @@ QString ModRowWidget::formatConflictTooltip(const ConflictInfo &info) const {
                 tooltip += QString("• %1<br>").arg(filePath);
             }
         }
-        if (info.conflictingFilePaths.size() > 5) {
-            tooltip += QStringLiteral("• ") + tr("... and %1 more").arg(info.conflictingFilePaths.size() - 5) + QStringLiteral("<br>");
+        if (static_cast<int>(info.conflictingFilePaths.size()) > 5) {
+            tooltip += QStringLiteral("• ") + tr("... and %1 more").arg(static_cast<int>(info.conflictingFilePaths.size()) - 5) + QStringLiteral("<br>");
         }
     }
 

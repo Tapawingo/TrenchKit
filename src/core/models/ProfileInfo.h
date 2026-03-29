@@ -32,14 +32,9 @@ struct ModConfig {
 struct ProfileInfo {
     QString id;
     QString name;
-    QDateTime createdDate;
-    QDateTime modifiedDate;
+    QDateTime createdDate  = QDateTime::currentDateTime();
+    QDateTime modifiedDate = QDateTime::currentDateTime();
     QList<ModConfig> modConfigs; ///< One entry per mod in the list at save time.
-
-    ProfileInfo()
-        : createdDate(QDateTime::currentDateTime())
-        , modifiedDate(QDateTime::currentDateTime())
-    {}
 
     /// @brief Serializes to JSON.
     QJsonObject toJson() const;

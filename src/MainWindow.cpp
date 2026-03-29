@@ -140,7 +140,7 @@ MainWindow::MainWindow(QWidget *parent)
     resize(1000, 700);
 
     // Add initial log entry
-    ActivityLogWidget *log = m_rightPanelWidget->getActivityLog();
+    ActivityLogWidget * const log = m_rightPanelWidget->getActivityLog();
     log->addLogEntry(tr("TrenchKit Started"), ActivityLogWidget::LogLevel::Info);
 
     QTimer::singleShot(0, this, &MainWindow::startUpdateCheck);

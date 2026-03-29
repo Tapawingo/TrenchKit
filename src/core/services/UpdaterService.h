@@ -108,7 +108,6 @@ private:
     Asset m_currentAsset;
     QString m_currentSavePath;
 
-private:
     QString m_owner;
     QString m_repo;
     QString m_authToken;
