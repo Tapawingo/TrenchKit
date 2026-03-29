@@ -7,12 +7,16 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 
 def read_version(project_root: Path) -> str:
-    cmake_file = project_root / "CMakeLists.txt"
-    content = cmake_file.read_text(encoding="utf-8", errors="replace")
-    match = re.search(r"VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)", content)
-    if not match:
-        raise RuntimeError("VERSION not found in CMakeLists.txt")
-    return match.group(1)
+    cmake_file = project_root / "cmake" / "version.cmake"
+    content = cmake_file.read_text(encoding="utf-8")
+    major = re.search(r"TRENCHKIT_VERSION_MAJOR\s+(\d+)", content).group(1)
+    minor = re.search(r"TRENCHKIT_VERSION_MINOR\s+(\d+)", content).group(1)
+    patch = re.search(r"TRENCHKIT_VERSION_PATCH\s+(\d+)", content).group(1)
+    pre   = re.search(r'TRENCHKIT_VERSION_PRERELEASE\s+"([^"]*)"', content)
+    version = f"{major}.{minor}.{patch}"
+    if pre and pre.group(1):
+        version += f"-{pre.group(1)}"
+    return version
 
 
 def copy_tree(src: Path, dst: Path) -> None:
