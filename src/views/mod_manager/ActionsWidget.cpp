@@ -25,17 +25,15 @@ void ActionsWidget::setFoxholeInstallPath(const QString &path) {
     m_foxholeInstallPath = path;
 }
 
-void ActionsWidget::onModSelectionChanged(int selectedRow, int totalMods) {
-    m_selectedRow = selectedRow;
+void ActionsWidget::onModSelectionChanged(int selectedCount, int minRow, int maxRow, int totalMods) {
+    m_selectedCount = selectedCount;
+    m_minRow = minRow;
+    m_maxRow = maxRow;
     m_totalMods = totalMods;
 
-    bool hasSelection = selectedRow >= 0;
-    bool isFirstRow = selectedRow == 0;
-    bool isLastRow = selectedRow == totalMods - 1;
-
-    m_removeButton->setEnabled(hasSelection);
-    m_moveUpButton->setEnabled(hasSelection && !isFirstRow);
-    m_moveDownButton->setEnabled(hasSelection && !isLastRow);
+    m_removeButton->setEnabled(selectedCount > 0);
+    m_moveUpButton->setEnabled(selectedCount > 0 && minRow > 0);
+    m_moveDownButton->setEnabled(selectedCount > 0 && maxRow >= 0 && maxRow < totalMods - 1);
 }
 
 void ActionsWidget::setupUi() {

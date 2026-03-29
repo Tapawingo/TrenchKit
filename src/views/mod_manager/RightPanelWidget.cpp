@@ -34,8 +34,8 @@ void RightPanelWidget::setFoxholeInstallPath(const QString &path) {
     m_launchWidget->setFoxholeInstallPath(path);
 }
 
-void RightPanelWidget::onModSelectionChanged(int selectedRow, int totalMods) {
-    m_actionsWidget->onModSelectionChanged(selectedRow, totalMods);
+void RightPanelWidget::onModSelectionChanged(int selectedCount, int minRow, int maxRow, int totalMods) {
+    m_actionsWidget->onModSelectionChanged(selectedCount, minRow, maxRow, totalMods);
 }
 
 void RightPanelWidget::setupUi() {

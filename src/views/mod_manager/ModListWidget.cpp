@@ -160,7 +160,9 @@ void ModListWidget::setupUi() {
             this, [this]() {
         int totalMods = m_modList->count();
         int selectedCount = getSelectedCount();
-        int selectedRow = selectedCount == 1 ? getSelectedRow() : -1;
+        QList<int> selRows = getSelectedRows();
+        int minRow = selRows.isEmpty() ? -1 : selRows.first();
+        int maxRow = selRows.isEmpty() ? -1 : selRows.last();
 
         for (int i = 0; i < totalMods; ++i) {
             QListWidgetItem *item = m_modList->item(i);
@@ -172,7 +174,7 @@ void ModListWidget::setupUi() {
             }
         }
 
-        emit modSelectionChanged(selectedRow, totalMods);
+        emit modSelectionChanged(selectedCount, minRow, maxRow, totalMods);
     });
 
     m_modList->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -572,80 +574,89 @@ void ModListWidget::onRemoveModClicked() {
     m_modalManager->showModal(modal);
 }
 
+static QStringList applyMoveUp(const QStringList &order, const QList<int> &selectedRows) {
+    const QSet<int> selSet(selectedRows.begin(), selectedRows.end());
+    QStringList out;
+    out.reserve(order.size());
+    int n = order.size();
+    int i = 0;
+    while (i < n) {
+        if (selSet.contains(i) && !selSet.contains(i - 1)) {
+            // Start of a selected run — displace the item above, append run, re-append displaced
+            QString displaced = out.isEmpty() ? QString() : out.takeLast();
+            while (i < n && selSet.contains(i))
+                out.append(order[i++]);
+            if (!displaced.isNull())
+                out.append(displaced);
+        } else if (!selSet.contains(i)) {
+            out.append(order[i++]);
+        } else {
+            ++i; // mid-run item, already consumed by inner while above
+        }
+    }
+    return out;
+}
+
+static QStringList applyMoveDown(const QStringList &order, const QList<int> &selectedRows) {
+    int n = order.size();
+    // Mirror selection indices and reverse the list, then apply move-up, then reverse back
+    QList<int> mirroredRows;
+    mirroredRows.reserve(selectedRows.size());
+    for (int i = selectedRows.size() - 1; i >= 0; --i)
+        mirroredRows.append(n - 1 - selectedRows[i]);
+
+    QStringList reversed;
+    reversed.reserve(n);
+    for (int i = n - 1; i >= 0; --i)
+        reversed.append(order[i]);
+
+    QStringList movedUp = applyMoveUp(reversed, mirroredRows);
+
+    QStringList result;
+    result.reserve(n);
+    for (int i = n - 1; i >= 0; --i)
+        result.append(movedUp[i]);
+    return result;
+}
+
 void ModListWidget::onMoveUpClicked() {
-    if (!m_modManager) {
-        return;
-    }
+    if (!m_modManager) return;
 
-    if (getSelectedCount() != 1) {
-        return;
-    }
+    QList<int> rows = getSelectedRows();
+    if (rows.isEmpty() || rows.first() <= 0) return;
 
-    int selectedRow = getSelectedRow();
-    if (selectedRow <= 0) {
-        return;
-    }
+    QStringList currentOrder;
+    currentOrder.reserve(m_modList->count());
+    for (int i = 0; i < m_modList->count(); ++i)
+        currentOrder.append(m_modList->item(i)->data(Qt::UserRole).toString());
 
-    QString modId = getSelectedModId();
-    if (modId.isEmpty()) {
-        return;
-    }
+    QStringList newOrder = applyMoveUp(currentOrder, rows);
 
-    // Get mod ID from row above
-    QListWidgetItem *aboveItem = m_modList->item(selectedRow - 1);
-    if (!aboveItem) {
-        return;
-    }
-    QString aboveModId = aboveItem->data(Qt::UserRole).toString();
-
-    // Swap priorities
-    ModInfo currentMod = m_modManager->getMod(modId);
-    ModInfo aboveMod = m_modManager->getMod(aboveModId);
-
-    m_modManager->setModPriority(modId, aboveMod.priority);
-    m_modManager->setModPriority(aboveModId, currentMod.priority);
-
-    // Select the moved row
-    m_modList->setCurrentRow(selectedRow - 1);
+    QMap<QString, int> priorities;
+    for (int i = 0; i < newOrder.size(); ++i)
+        priorities[newOrder[i]] = i;
+    m_modManager->batchSetModPriorities(priorities);
 
     emit modReordered();
 }
 
 void ModListWidget::onMoveDownClicked() {
-    if (!m_modManager) {
-        return;
-    }
+    if (!m_modManager) return;
 
-    if (getSelectedCount() != 1) {
-        return;
-    }
+    QList<int> rows = getSelectedRows();
+    if (rows.isEmpty() || rows.last() >= m_modList->count() - 1) return;
 
-    int selectedRow = getSelectedRow();
-    if (selectedRow < 0 || selectedRow >= m_modList->count() - 1) {
-        return;
-    }
+    QStringList currentOrder;
+    currentOrder.reserve(m_modList->count());
+    for (int i = 0; i < m_modList->count(); ++i)
+        currentOrder.append(m_modList->item(i)->data(Qt::UserRole).toString());
 
-    QString modId = getSelectedModId();
-    if (modId.isEmpty()) {
-        return;
-    }
+    QStringList newOrder = applyMoveDown(currentOrder, rows);
 
-    // Get mod ID from row below
-    QListWidgetItem *belowItem = m_modList->item(selectedRow + 1);
-    if (!belowItem) {
-        return;
-    }
-    QString belowModId = belowItem->data(Qt::UserRole).toString();
-
-    // Swap priorities
-    ModInfo currentMod = m_modManager->getMod(modId);
-    ModInfo belowMod = m_modManager->getMod(belowModId);
-
-    m_modManager->setModPriority(modId, belowMod.priority);
-    m_modManager->setModPriority(belowModId, currentMod.priority);
-
-    // Select the moved row
-    m_modList->setCurrentRow(selectedRow + 1);
+    QMap<QString, int> priorities;
+    for (int i = 0; i < newOrder.size(); ++i)
+        priorities[newOrder[i]] = i;
+    m_modManager->batchSetModPriorities(priorities);
 
     emit modReordered();
 }
@@ -673,6 +684,15 @@ QStringList ModListWidget::getSelectedModIds() const {
         }
     }
     return modIds;
+}
+
+QList<int> ModListWidget::getSelectedRows() const {
+    QList<int> rows;
+    if (!m_modList) return rows;
+    for (int i = 0; i < m_modList->count(); ++i)
+        if (m_modList->item(i)->isSelected())
+            rows.append(i);
+    return rows;
 }
 
 int ModListWidget::getSelectedRow() const {

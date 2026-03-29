@@ -37,9 +37,9 @@ signals:
 
 public slots:
     /**
-     * @brief Updates button enabled states based on @p selectedRow and @p totalMods.
+     * @brief Updates button enabled states based on current selection.
      */
-    void onModSelectionChanged(int selectedRow, int totalMods);
+    void onModSelectionChanged(int selectedCount, int minRow, int maxRow, int totalMods);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -58,7 +58,9 @@ private:
     QFrame* createSeparator();
 
     QString m_foxholeInstallPath;
-    int m_selectedRow = -1;
+    int m_selectedCount = 0;
+    int m_minRow = -1;
+    int m_maxRow = -1;
     int m_totalMods = 0;
 
     QLabel *m_titleLabel = nullptr;
