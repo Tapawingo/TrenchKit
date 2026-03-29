@@ -43,7 +43,7 @@ signals:
     void errorOccurred(const QString &error);
 
 public slots:
-    void onModSelectionChanged(int selectedRow, int totalMods);
+    void onModSelectionChanged(int selectedCount, int minRow, int maxRow, int totalMods);
 
 private:
     void setupUi();

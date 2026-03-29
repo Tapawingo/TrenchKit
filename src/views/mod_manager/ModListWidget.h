@@ -62,9 +62,11 @@ public:
 
 signals:
     /**
-     * @brief Emitted when the selection changes; @p selectedRow is -1 when nothing is selected.
+     * @brief Emitted when the selection changes.
+     *
+     * @p selectedCount is 0 when nothing is selected; @p minRow and @p maxRow are -1.
      */
-    void modSelectionChanged(int selectedRow, int totalMods);
+    void modSelectionChanged(int selectedCount, int minRow, int maxRow, int totalMods);
     void modAdded(const QString &modName);
     void modRemoved(const QString &modName);
     void modReordered();
@@ -112,6 +114,7 @@ private:
     void retranslateUi();
     QString getSelectedModId() const;
     QStringList getSelectedModIds() const;
+    QList<int> getSelectedRows() const;
     int getSelectedRow() const;
     int getSelectedCount() const;
     void showSelectionContextMenu(const QPoint &globalPos);
