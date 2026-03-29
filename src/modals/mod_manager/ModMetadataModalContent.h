@@ -1,5 +1,7 @@
-/// @file ModMetadataModalContent.h
-/// @brief Modal for editing a mod's stored metadata fields.
+/**
+ * @file ModMetadataModalContent.h
+ * @brief Modal for editing a mod's stored metadata fields.
+ */
 #ifndef MODMETADATAMODALCONTENT_H
 #define MODMETADATAMODALCONTENT_H
 
@@ -10,16 +12,20 @@ class QLineEdit;
 class QTextEdit;
 class QDateTimeEdit;
 
-/// @brief Editable form for all @c ModInfo metadata fields except pak file content.
-///
-/// Call @c getModInfo() after @c Accepted to retrieve the updated @c ModInfo.
+/**
+ * @brief Editable form for all @c ModInfo metadata fields except pak file content.
+ *
+ * Call @c getModInfo() after @c Accepted to retrieve the updated @c ModInfo.
+ */
 class ModMetadataModalContent : public BaseModalContent {
     Q_OBJECT
 
 public:
     explicit ModMetadataModalContent(const ModInfo &mod, QWidget *parent = nullptr);
 
-    /// @brief Returns a @c ModInfo populated with the user's edits; valid after @c Accepted.
+    /**
+     * @brief Returns a @c ModInfo populated with the user's edits; valid after @c Accepted.
+     */
     ModInfo getModInfo() const;
 
 private:

@@ -1,11 +1,15 @@
-/// @file GradientFrame.h
-/// @brief QFrame subclass with a textured gradient background and styled border.
+/**
+ * @file GradientFrame.h
+ * @brief QFrame subclass with a textured gradient background and styled border.
+ */
 #ifndef GRADIENTFRAME_H
 #define GRADIENTFRAME_H
 
 #include <QFrame>
 
-/// @brief Paints a dark textured gradient background used for top-level panel areas.
+/**
+ * @brief Paints a dark textured gradient background used for top-level panel areas.
+ */
 class GradientFrame : public QFrame {
     Q_OBJECT
 

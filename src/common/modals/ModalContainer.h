@@ -1,5 +1,7 @@
-/// @file ModalContainer.h
-/// @brief Styled container widget that wraps BaseModalContent inside a ModalOverlay.
+/**
+ * @file ModalContainer.h
+ * @brief Styled container widget that wraps BaseModalContent inside a ModalOverlay.
+ */
 #ifndef MODALCONTAINER_H
 #define MODALCONTAINER_H
 
@@ -8,9 +10,11 @@
 class BaseModalContent;
 class QVBoxLayout;
 
-/// @brief Draws the modal dialog background and border, then hosts the content widget.
-///
-/// Background rendering is cached to a @c QPixmap and invalidated on resize.
+/**
+ * @brief Draws the modal dialog background and border, then hosts the content widget.
+ *
+ * Background rendering is cached to a @c QPixmap and invalidated on resize.
+ */
 class ModalContainer : public QWidget {
     Q_OBJECT
 

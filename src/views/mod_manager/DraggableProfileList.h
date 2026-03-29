@@ -1,5 +1,7 @@
-/// @file DraggableProfileList.h
-/// @brief QListWidget that supports drag-to-reorder for the profile list.
+/**
+ * @file DraggableProfileList.h
+ * @brief QListWidget that supports drag-to-reorder for the profile list.
+ */
 #ifndef DRAGGABLEPROFILELIST_H
 #define DRAGGABLEPROFILELIST_H
 
@@ -7,7 +9,9 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 
-/// @brief Profile list with drag-to-reorder; emits @c itemsReordered after a drop.
+/**
+ * @brief Profile list with drag-to-reorder; emits @c itemsReordered after a drop.
+ */
 class DraggableProfileList : public QListWidget {
     Q_OBJECT
 
@@ -16,7 +20,9 @@ public:
     ~DraggableProfileList() override = default;
 
 signals:
-    /// @brief Emitted after the user drag-drops a profile row to a new position.
+    /**
+     * @brief Emitted after the user drag-drops a profile row to a new position.
+     */
     void itemsReordered();
 
 protected:

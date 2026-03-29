@@ -1,11 +1,15 @@
-/// @file PanelFrame.h
-/// @brief QFrame subclass with a textured background used for interior panel areas.
+/**
+ * @file PanelFrame.h
+ * @brief QFrame subclass with a textured background used for interior panel areas.
+ */
 #ifndef PANELFRAME_H
 #define PANELFRAME_H
 
 #include <QFrame>
 
-/// @brief Paints the standard textured panel background used inside mod-list and profile-list panels.
+/**
+ * @brief Paints the standard textured panel background used inside mod-list and profile-list panels.
+ */
 class PanelFrame : public QFrame {
     Q_OBJECT
 

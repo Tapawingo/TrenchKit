@@ -1,5 +1,7 @@
-/// @file PakFileReader.h
-/// @brief Parses Unreal Engine pak file headers to list or extract embedded files.
+/**
+ * @file PakFileReader.h
+ * @brief Parses Unreal Engine pak file headers to list or extract embedded files.
+ */
 #ifndef PAKFILEREADER_H
 #define PAKFILEREADER_H
 
@@ -10,13 +12,17 @@
 #include <QVector>
 #include <QPair>
 
-/// @brief Reads Unreal Engine pak file headers without decompressing content.
-///
-/// @c extractFilePaths() reads only the index and is fast; @c extractFile()
-/// decompresses a single entry on demand.
+/**
+ * @brief Reads Unreal Engine pak file headers without decompressing content.
+ *
+ * @c extractFilePaths() reads only the index and is fast; @c extractFile()
+ * decompresses a single entry on demand.
+ */
 class PakFileReader {
 public:
-    /// @brief Pak footer structure at the end of every Unreal pak file.
+    /**
+     * @brief Pak footer structure at the end of every Unreal pak file.
+     */
     struct PakFooter {
         quint32 magic;
         quint32 version;
@@ -28,7 +34,9 @@ public:
         static constexpr int SIZE = 44;
     };
 
-    /// @brief Result of @c extractFilePaths().
+    /**
+     * @brief Result of @c extractFilePaths().
+     */
     struct ParseResult {
         bool success;
         QString error;       ///< Human-readable error when @c success is false.
@@ -36,7 +44,9 @@ public:
         QString mountPoint;  ///< Pak mount point prefix (e.g. "../../../").
     };
 
-    /// @brief Metadata for a single file entry in the pak index.
+    /**
+     * @brief Metadata for a single file entry in the pak index.
+     */
     struct FileEntry {
         QString path;
         quint64 offset = 0;
@@ -48,13 +58,17 @@ public:
         QVector<QPair<quint64, quint64>> compressionBlocks;
     };
 
-    /// @brief Lists all file paths in the pak index; does not decompress any content.
+    /**
+     * @brief Lists all file paths in the pak index; does not decompress any content.
+     */
     static ParseResult extractFilePaths(const QString &pakFilePath);
 
-    /// @brief Extracts and decompresses the first file whose path matches one of @p candidatePaths.
-    /// @param data Receives the decompressed file bytes on success.
-    /// @param error Set to a human-readable message on failure; may be null.
-    /// @returns true on success.
+    /**
+     * @brief Extracts and decompresses the first file whose path matches one of @p candidatePaths.
+     * @param data Receives the decompressed file bytes on success.
+     * @param error Set to a human-readable message on failure; may be null.
+     * @returns true on success.
+     */
     static bool extractFile(const QString &pakFilePath,
                             const QStringList &candidatePaths,
                             QByteArray *data,
