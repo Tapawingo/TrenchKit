@@ -1,5 +1,7 @@
-/// @file Logger.h
-/// @brief Singleton file logger with automatic rotation, installed as the Qt message handler.
+/**
+ * @file Logger.h
+ * @brief Singleton file logger with automatic rotation, installed as the Qt message handler.
+ */
 #ifndef LOGGER_H
 #define LOGGER_H
 
@@ -10,11 +12,13 @@
 #include <QString>
 #include <QDateTime>
 
-/// @brief Thread-safe singleton that writes Qt log messages to a rotating log file.
-///
-/// Call @c initialize() once at startup to open the log file and install
-/// @c messageHandler as the Qt message handler via @c qInstallMessageHandler.
-/// Logs rotate at 10 MB and are purged after 7 days.
+/**
+ * @brief Thread-safe singleton that writes Qt log messages to a rotating log file.
+ *
+ * Call @c initialize() once at startup to open the log file and install
+ * @c messageHandler as the Qt message handler via @c qInstallMessageHandler.
+ * Logs rotate at 10 MB and are purged after 7 days.
+ */
 class Logger : public QObject {
     Q_OBJECT
 
@@ -28,15 +32,21 @@ public:
 
     static Logger& instance();
 
-    /// @brief Opens the log file under AppData/TrenchKit/logs/ and installs the Qt message handler.
+    /**
+     * @brief Opens the log file under AppData/TrenchKit/logs/ and installs the Qt message handler.
+     */
     void initialize();
-    /// @brief Flushes and closes the log file; restores the default Qt message handler.
+    /**
+     * @brief Flushes and closes the log file; restores the default Qt message handler.
+     */
     void shutdown();
 
     QString logDirectory() const;
     QString currentLogFile() const;
 
-    /// @brief Qt message handler; install via @c qInstallMessageHandler(Logger::messageHandler).
+    /**
+     * @brief Qt message handler; install via @c qInstallMessageHandler(Logger::messageHandler).
+     */
     static void messageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg);
 
 private:
@@ -46,9 +56,13 @@ private:
     Logger& operator=(const Logger&) = delete;
 
     void writeToFile(const QString &message);
-    /// @brief Rotates the log file when it exceeds @c m_maxFileSize bytes.
+    /**
+     * @brief Rotates the log file when it exceeds @c m_maxFileSize bytes.
+     */
     void rotateIfNeeded();
-    /// @brief Deletes log files older than @c m_maxDays days.
+    /**
+     * @brief Deletes log files older than @c m_maxDays days.
+     */
     void cleanOldLogs();
     QString formatMessage(QtMsgType type, const QString &msg, const QMessageLogContext &context);
     QString logLevelToString(QtMsgType type);

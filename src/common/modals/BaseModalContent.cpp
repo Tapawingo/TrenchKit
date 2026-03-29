@@ -54,15 +54,15 @@ void BaseModalContent::setHeaderVisible(bool visible) {
 }
 
 void BaseModalContent::accept() {
-    m_result = Accepted;
+    m_result = Result::Accepted;
     emit accepted();
-    emit finished(Accepted);
+    emit finished(static_cast<int>(Result::Accepted));
 }
 
 void BaseModalContent::reject() {
-    m_result = Rejected;
+    m_result = Result::Rejected;
     emit rejected();
-    emit finished(Rejected);
+    emit finished(static_cast<int>(Result::Rejected));
 }
 
 void BaseModalContent::showEvent(QShowEvent *event) {

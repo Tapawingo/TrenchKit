@@ -1,5 +1,7 @@
-/// @file ModUpdateModalContent.h
-/// @brief Modal that auto-downloads and installs a NexusMods mod update.
+/**
+ * @file ModUpdateModalContent.h
+ * @brief Modal that auto-downloads and installs a NexusMods mod update.
+ */
 #ifndef MODUPDATEMODALCONTENT_H
 #define MODUPDATEMODALCONTENT_H
 
@@ -15,11 +17,13 @@ class QLabel;
 class QProgressBar;
 class QPushButton;
 
-/// @brief Shown when the user requests an update for a NexusMods-linked mod.
-///
-/// Immediately starts downloading the update on @c showEvent. The progress
-/// bar and status label update as the download proceeds. On completion,
-/// replaces the mod's pak via @c ModManager::replaceMod() and emits @c finished.
+/**
+ * @brief Shown when the user requests an update for a NexusMods-linked mod.
+ *
+ * Immediately starts downloading the update on @c showEvent. The progress
+ * bar and status label update as the download proceeds. On completion,
+ * replaces the mod's pak via @c ModManager::replaceMod() and emits @c finished.
+ */
 class ModUpdateModalContent : public BaseModalContent {
     Q_OBJECT
 

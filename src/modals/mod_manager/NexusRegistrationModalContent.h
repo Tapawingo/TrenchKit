@@ -1,5 +1,7 @@
-/// @file NexusRegistrationModalContent.h
-/// @brief Modal for linking an existing local mod to a NexusMods entry.
+/**
+ * @file NexusRegistrationModalContent.h
+ * @brief Modal for linking an existing local mod to a NexusMods entry.
+ */
 #ifndef NEXUSREGISTRATIONMODALCONTENT_H
 #define NEXUSREGISTRATIONMODALCONTENT_H
 
@@ -17,11 +19,13 @@ class QLabel;
 class QStackedWidget;
 class QListWidget;
 
-/// @brief Links an already-installed mod to its NexusMods page (metadata only; no re-download).
-///
-/// The user enters a NexusMods URL; the modal fetches mod info and file listings.
-/// On @c Accepted, call the result getters to obtain the NexusMods metadata to
-/// write back to the mod's @c ModInfo.
+/**
+ * @brief Links an already-installed mod to its NexusMods page (metadata only; no re-download).
+ *
+ * The user enters a NexusMods URL; the modal fetches mod info and file listings.
+ * On @c Accepted, call the result getters to obtain the NexusMods metadata to
+ * write back to the mod's @c ModInfo.
+ */
 class NexusRegistrationModalContent : public BaseModalContent {
     Q_OBJECT
 

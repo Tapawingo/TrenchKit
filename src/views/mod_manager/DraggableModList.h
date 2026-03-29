@@ -1,5 +1,7 @@
-/// @file DraggableModList.h
-/// @brief QListWidget that supports drag-to-reorder and external file drop for mod installation.
+/**
+ * @file DraggableModList.h
+ * @brief QListWidget that supports drag-to-reorder and external file drop for mod installation.
+ */
 #ifndef DRAGGABLEMODLIST_H
 #define DRAGGABLEMODLIST_H
 
@@ -7,10 +9,12 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 
-/// @brief Extends QListWidget with two drop modes: row reorder and file drop.
-///
-/// Dropping rows within the list emits @c itemsReordered. Dropping .pak or
-/// archive files from outside the application emits @c filesDropped.
+/**
+ * @brief Extends QListWidget with two drop modes: row reorder and file drop.
+ *
+ * Dropping rows within the list emits @c itemsReordered. Dropping .pak or
+ * archive files from outside the application emits @c filesDropped.
+ */
 class DraggableModList : public QListWidget {
     Q_OBJECT
 
@@ -19,9 +23,13 @@ public:
     ~DraggableModList() override = default;
 
 signals:
-    /// @brief Emitted after the user drag-drops a row to a new position.
+    /**
+     * @brief Emitted after the user drag-drops a row to a new position.
+     */
     void itemsReordered();
-    /// @brief Emitted when the user drops mod files onto the list from outside the app.
+    /**
+     * @brief Emitted when the user drops mod files onto the list from outside the app.
+     */
     void filesDropped(const QStringList &filePaths);
 
 protected:

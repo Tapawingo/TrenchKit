@@ -1,5 +1,7 @@
-/// @file ModInfo.h
-/// @brief Persistent metadata for a single installed mod.
+/**
+ * @file ModInfo.h
+ * @brief Persistent metadata for a single installed mod.
+ */
 #ifndef MODINFO_H
 #define MODINFO_H
 
@@ -9,12 +11,16 @@
 #include <QList>
 #include <QUuid>
 
-/// @brief Metadata for a single installed mod.
-///
-/// Tracks identity, load order, source URLs (NexusMods and/or itch.io),
-/// manifest-derived data, and update-suppression state.
+/**
+ * @brief Metadata for a single installed mod.
+ *
+ * Tracks identity, load order, source URLs (NexusMods and/or itch.io),
+ * manifest-derived data, and update-suppression state.
+ */
 struct ModInfo {
-    /// @brief Manifest-declared dependency on another mod.
+    /**
+     * @brief Manifest-declared dependency on another mod.
+     */
     struct Dependency {
         QString id;               ///< Target mod identifier.
         QString minVersion;       ///< Minimum compatible version (empty = any).
@@ -53,12 +59,18 @@ struct ModInfo {
         , priority(0)
     {}
 
-    /// @brief Serializes this mod to a JSON object.
+    /**
+     * @brief Serializes this mod to a JSON object.
+     */
     QJsonObject toJson() const;
-    /// @brief Deserializes a mod from a JSON object.
+    /**
+     * @brief Deserializes a mod from a JSON object.
+     */
     static ModInfo fromJson(const QJsonObject &json);
 
-    /// @brief Generates a new random UUID string suitable for use as a mod ID.
+    /**
+     * @brief Generates a new random UUID string suitable for use as a mod ID.
+     */
     static QString generateId() {
         return QUuid::createUuid().toString(QUuid::WithoutBraces);
     }

@@ -1,5 +1,7 @@
-/// @file ModRowWidget.h
-/// @brief Widget representing a single row in the mod list.
+/**
+ * @file ModRowWidget.h
+ * @brief Widget representing a single row in the mod list.
+ */
 #ifndef MODROWWIDGET_H
 #define MODROWWIDGET_H
 
@@ -15,7 +17,9 @@ class ConflictTooltip;
 class QContextMenuEvent;
 struct ConflictInfo;
 
-/// @brief Displays one mod's name, enable toggle, date, and status indicators (update/conflict/notice).
+/**
+ * @brief Displays one mod's name, enable toggle, date, and status indicators (update/conflict/notice).
+ */
 class ModRowWidget : public QWidget {
     Q_OBJECT
 
@@ -26,10 +30,14 @@ public:
     QString modId() const { return m_modId; }
     void updateModInfo(const ModInfo &mod);
     void setSelected(bool selected);
-    /// @brief Shows or hides the update badge; @p version is displayed in the button tooltip.
+    /**
+     * @brief Shows or hides the update badge; @p version is displayed in the button tooltip.
+     */
     void setUpdateAvailable(bool available, const QString &version);
     void hideUpdateButton();
-    /// @brief Updates the conflict indicator icon and tooltip from @p info.
+    /**
+     * @brief Updates the conflict indicator icon and tooltip from @p info.
+     */
     void setConflictInfo(const ConflictInfo &info);
     void clearConflictIndicator();
     void setNotice(const QString &text, const QString &iconType);

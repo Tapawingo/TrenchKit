@@ -173,7 +173,7 @@ void UpdaterService::checkForUpdates() {
     connect(m_activeReply, &QNetworkReply::finished, this, [this]() {
         if (!m_activeReply) return;
 
-        QNetworkReply* reply = m_activeReply;
+        QNetworkReply* const reply = m_activeReply;
         const auto err = reply->error();
         const QByteArray body = reply->readAll();
         const int httpStatus =
@@ -190,7 +190,7 @@ void UpdaterService::checkForUpdates() {
                 connect(m_activeReply, &QNetworkReply::finished, this, [this]() {
                     if (!m_activeReply) return;
 
-                    QNetworkReply* fallbackReply = m_activeReply;
+                    QNetworkReply* const fallbackReply = m_activeReply;
                     const auto fallbackErr = fallbackReply->error();
                     const QByteArray fallbackBody = fallbackReply->readAll();
                     const int fallbackStatus =
@@ -391,8 +391,8 @@ void UpdaterService::startDownload(bool allowResume, bool forceRestart) {
         m_downloadFile.close();
 
         if (httpStatus == 416 && m_resumeFrom > 0 && !m_restartAttempted) {
-            QFileInfo fi(m_currentSavePath);
-            if (m_currentAsset.sizeBytes > 0 && fi.exists() && fi.size() == m_currentAsset.sizeBytes) {
+            QFileInfo completedFileInfo(m_currentSavePath);
+            if (m_currentAsset.sizeBytes > 0 && completedFileInfo.exists() && completedFileInfo.size() == m_currentAsset.sizeBytes) {
                 emitDownloadFinishedQueued(this, m_currentSavePath);
                 return;
             }

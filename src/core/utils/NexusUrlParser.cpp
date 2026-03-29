@@ -34,8 +34,7 @@ NexusUrlParser::ParseResult NexusUrlParser::parseUrl(const QString &url) {
         return result;
     }
 
-    QUrlQuery query(qurl);
-    if (query.hasQueryItem(QStringLiteral("file_id"))) {
+    if (QUrlQuery query(qurl); query.hasQueryItem(QStringLiteral("file_id"))) {
         result.fileId = query.queryItemValue(QStringLiteral("file_id"));
     }
 

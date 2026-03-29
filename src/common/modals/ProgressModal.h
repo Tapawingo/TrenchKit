@@ -1,5 +1,7 @@
-/// @file ProgressModal.h
-/// @brief Modal dialog showing a progress bar with an optional cancel button.
+/**
+ * @file ProgressModal.h
+ * @brief Modal dialog showing a progress bar with an optional cancel button.
+ */
 #ifndef PROGRESSMODAL_H
 #define PROGRESSMODAL_H
 
@@ -11,11 +13,13 @@ class QLabel;
 class QProgressBar;
 class QPushButton;
 
-/// @brief Displays long-running operation progress; optionally cancellable.
-///
-/// Pass a non-empty @p cancelButtonText to show the cancel button. Connect to
-/// @c canceled() to abort the operation. Call @c setValue() from the background
-/// thread via a queued signal connection.
+/**
+ * @brief Displays long-running operation progress; optionally cancellable.
+ *
+ * Pass a non-empty @p cancelButtonText to show the cancel button. Connect to
+ * @c canceled() to abort the operation. Call @c setValue() from the background
+ * thread via a queued signal connection.
+ */
 class ProgressModal : public BaseModalContent {
     Q_OBJECT
 
@@ -32,11 +36,10 @@ public:
     void setCancelButtonEnabled(bool enabled);
 
 signals:
-    /// @brief Emitted when the user clicks the cancel button.
+    /**
+     * @brief Emitted when the user clicks the cancel button.
+     */
     void canceled();
-
-protected:
-    void changeEvent(QEvent *event) override;
 
 private:
     void setupUi(const QString &labelText, const QString &cancelButtonText);

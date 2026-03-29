@@ -1,5 +1,7 @@
-/// @file LogEntryWidget.h
-/// @brief Widget for a single row in the activity log.
+/**
+ * @file LogEntryWidget.h
+ * @brief Widget for a single row in the activity log.
+ */
 #ifndef LOGENTRYWIDGET_H
 #define LOGENTRYWIDGET_H
 
@@ -8,7 +10,9 @@
 
 class QLabel;
 
-/// @brief Renders one log message with a level-colored prefix.
+/**
+ * @brief Renders one log message with a level-colored prefix.
+ */
 class LogEntryWidget : public QWidget {
     Q_OBJECT
 

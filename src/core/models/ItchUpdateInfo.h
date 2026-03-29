@@ -1,5 +1,7 @@
-/// @file ItchUpdateInfo.h
-/// @brief Result of an itch.io update check for a single mod.
+/**
+ * @file ItchUpdateInfo.h
+ * @brief Result of an itch.io update check for a single mod.
+ */
 #ifndef ITCHUPDATEINFO_H
 #define ITCHUPDATEINFO_H
 
@@ -9,11 +11,13 @@
 #include <QRegularExpression>
 #include "ItchUploadInfo.h"
 
-/// @brief Cached result of an itch.io update check.
-///
-/// Produced by ItchModUpdateService and consumed by the UI and
-/// ItchModUpdateModalContent. When multiple candidate uploads are found,
-/// @c candidateUploads is populated so the user can pick one.
+/**
+ * @brief Cached result of an itch.io update check.
+ *
+ * Produced by ItchModUpdateService and consumed by the UI and
+ * ItchModUpdateModalContent. When multiple candidate uploads are found,
+ * @c candidateUploads is populated so the user can pick one.
+ */
 struct ItchUpdateInfo {
     QString modId;
     QString currentVersion;
@@ -27,7 +31,9 @@ struct ItchUpdateInfo {
 
     ItchUpdateInfo() = default;
 
-    /// @brief Constructs a resolved single-upload update result.
+    /**
+     * @brief Constructs a resolved single-upload update result.
+     */
     ItchUpdateInfo(const QString &id, const QString &current, const QString &available,
                    const QString &uploadId, const QDateTime &currentDate, const QDateTime &availableDate)
         : modId(id)
@@ -40,12 +46,14 @@ struct ItchUpdateInfo {
         , updateAvailable(true)
     {}
 
-    /// @brief Constructs an update result from a list of candidate uploads.
-    ///
-    /// Selects the first upload as the preferred candidate. The version string is
-    /// extracted from the filename via regex; if no version is found it falls back
-    /// to @c "Updated: YYYY-MM-DD". When @c uploads has more than one entry,
-    /// @c hasMultipleUploads() returns true and the UI should prompt the user.
+    /**
+     * @brief Constructs an update result from a list of candidate uploads.
+     *
+     * Selects the first upload as the preferred candidate. The version string is
+     * extracted from the filename via regex; if no version is found it falls back
+     * to @c "Updated: YYYY-MM-DD". When @c uploads has more than one entry,
+     * @c hasMultipleUploads() returns true and the UI should prompt the user.
+     */
     ItchUpdateInfo(const QString &id, const QString &current,
                    const QDateTime &currentDate, const QList<ItchUploadInfo> &uploads)
         : modId(id)
@@ -71,7 +79,9 @@ struct ItchUpdateInfo {
         }
     }
 
-    /// @brief Returns true when more than one upload is available to choose from.
+    /**
+     * @brief Returns true when more than one upload is available to choose from.
+     */
     bool hasMultipleUploads() const { return candidateUploads.size() > 1; }
 };
 

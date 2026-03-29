@@ -58,7 +58,7 @@ void ModalOverlay::fadeOut() {
 
     disconnect(m_fadeAnimation, &QPropertyAnimation::finished, nullptr, nullptr);
     connect(m_fadeAnimation, &QPropertyAnimation::finished, this, [this]() {
-        emit closed(m_content->result());
+        emit closed(static_cast<int>(m_content->result()));
         deleteLater();
     });
 

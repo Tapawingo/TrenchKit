@@ -1,5 +1,7 @@
-/// @file ItchDownloadModalContent.h
-/// @brief Modal for downloading mods from itch.io URLs.
+/**
+ * @file ItchDownloadModalContent.h
+ * @brief Modal for downloading mods from itch.io URLs.
+ */
 #ifndef ITCHDOWNLOADMODALCONTENT_H
 #define ITCHDOWNLOADMODALCONTENT_H
 
@@ -20,7 +22,9 @@ class QProgressBar;
 class QLabel;
 class QStackedWidget;
 
-/// @brief Aggregated result for one downloaded itch.io upload.
+/**
+ * @brief Aggregated result for one downloaded itch.io upload.
+ */
 struct ItchDownloadResult {
     QString filePath;   ///< Local path of the downloaded pak file.
     QString gameId;     ///< Numeric itch.io game ID.
@@ -30,11 +34,13 @@ struct ItchDownloadResult {
     ItchUploadInfo uploadInfo;
 };
 
-/// @brief Three-page modal (Input → Auth → Download) for itch.io mod downloads.
-///
-/// Accepts one or more itch.io game page URLs. If no API key is stored, shows
-/// an API key entry page (@c AuthPage). Downloads the selected upload(s) and
-/// saves the pak files. Call the result getters after @c Accepted.
+/**
+ * @brief Three-page modal (Input → Auth → Download) for itch.io mod downloads.
+ *
+ * Accepts one or more itch.io game page URLs. If no API key is stored, shows
+ * an API key entry page (@c AuthPage). Downloads the selected upload(s) and
+ * saves the pak files. Call the result getters after @c Accepted.
+ */
 class ItchDownloadModalContent : public BaseModalContent {
     Q_OBJECT
 
@@ -69,7 +75,9 @@ protected:
     void changeEvent(QEvent *event) override;
 
 private:
-    /// @brief One queued game page URL awaiting download.
+    /**
+     * @brief One queued game page URL awaiting download.
+     */
     struct PendingGame {
         QString creator;
         QString gameName;
