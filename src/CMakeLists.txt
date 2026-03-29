@@ -212,16 +212,17 @@ if(EXISTS "${QT_TLS_PLUGIN_DIR}/${TLS_PLUGIN}")
     )
 endif()
 
+# Copy updater helper on all platforms
+add_dependencies(TrenchKit updater)
+add_custom_command(TARGET TrenchKit POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:updater>
+        $<TARGET_FILE_DIR:TrenchKit>
+    COMMENT "Copying updater helper to output directory"
+)
+
 # Windows-specific runtime dependencies
 if(WIN32)
-    add_dependencies(TrenchKit updater)
-    add_custom_command(TARGET TrenchKit POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:updater>
-            $<TARGET_FILE_DIR:TrenchKit>
-        COMMENT "Copying updater helper to output directory"
-    )
-
     # Copy zip DLL if it exists
     set(ZIP_DLL_PATH "${CMAKE_BINARY_DIR}/_deps/zip-build/libzip.dll")
     if(EXISTS "${ZIP_DLL_PATH}")

@@ -8,6 +8,31 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
+static void parseSteamLibraryFolders(const QString &steamPath, QStringList &paths) {
+    const QString vdfPath = steamPath + "/steamapps/libraryfolders.vdf";
+    QFile vdfFile(vdfPath);
+    if (!vdfFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+    QTextStream in(&vdfFile);
+    const QString content = in.readAll();
+    vdfFile.close();
+    for (const QString &line : content.split('\n')) {
+        const QString trimmed = line.trimmed();
+        if (!trimmed.startsWith("\"path\""))
+            continue;
+        const int first  = trimmed.indexOf('\"', 6);
+        const int second = trimmed.indexOf('\"', first + 1);
+        const int third  = trimmed.indexOf('\"', second + 1);
+        const int fourth = trimmed.indexOf('\"', third + 1);
+        if (third < 0 || fourth <= third)
+            continue;
+        QString libPath = trimmed.mid(third + 1, fourth - third - 1).replace("\\\\", "/");
+        libPath = QDir::fromNativeSeparators(libPath);
+        if (!libPath.isEmpty() && QDir(libPath).exists() && !paths.contains(libPath))
+            paths.append(libPath);
+    }
+}
+
 QString FoxholeDetector::detectInstallPath() {
     qDebug() << "Starting Foxhole installation detection...";
 
@@ -76,55 +101,21 @@ QStringList FoxholeDetector::getSteamLibraryPaths() {
     qDebug() << "Steam path from registry:" << steamPath;
 
     if (!steamPath.isEmpty()) {
-        // Normalize path separators
         steamPath = QDir::fromNativeSeparators(steamPath);
         paths.append(steamPath);
-
-        // Try to parse libraryfolders.vdf
-        QString vdfPath = steamPath + "/steamapps/libraryfolders.vdf";
-        qDebug() << "Looking for libraryfolders.vdf at:" << vdfPath;
-
-        QFile vdfFile(vdfPath);
-        if (vdfFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            qDebug() << "Parsing libraryfolders.vdf...";
-            QTextStream in(&vdfFile);
-            QString content = in.readAll();
-            vdfFile.close();
-
-            // Parse VDF format - look for "path" entries
-            QStringList lines = content.split('\n');
-            for (const QString &line : lines) {
-                QString trimmed = line.trimmed();
-
-                // Look for "path" key
-                if (trimmed.startsWith("\"path\"")) {
-                    // Extract value between quotes after the key
-                    int firstQuote = trimmed.indexOf('\"', 6); // Skip "path"
-                    int secondQuote = trimmed.indexOf('\"', firstQuote + 1);
-                    int thirdQuote = trimmed.indexOf('\"', secondQuote + 1);
-                    int fourthQuote = trimmed.indexOf('\"', thirdQuote + 1);
-
-                    if (thirdQuote > 0 && fourthQuote > thirdQuote) {
-                        QString libPath = trimmed.mid(thirdQuote + 1, fourthQuote - thirdQuote - 1);
-                        // Convert double backslashes to forward slashes
-                        libPath = libPath.replace("\\\\", "/");
-                        libPath = QDir::fromNativeSeparators(libPath);
-
-                        if (!libPath.isEmpty() && QDir(libPath).exists()) {
-                            qDebug() << "Found library path:" << libPath;
-                            paths.append(libPath);
-                        }
-                    }
-                }
-            }
-        } else {
-            qDebug() << "Could not open libraryfolders.vdf";
-        }
+        parseSteamLibraryFolders(steamPath, paths);
     }
 #elif defined(Q_OS_LINUX)
-    QString steamPath = QDir::homePath() + "/.steam/steam";
-    if (QDir(steamPath).exists()) {
-        paths.append(steamPath);
+    const QStringList candidates = {
+        QDir::homePath() + "/.steam/steam",
+        QDir::homePath() + "/.local/share/Steam",
+    };
+    for (const QString &candidate : candidates) {
+        if (QDir(candidate).exists()) {
+            if (!paths.contains(candidate))
+                paths.append(candidate);
+            parseSteamLibraryFolders(candidate, paths);
+        }
     }
 #elif defined(Q_OS_MAC)
     QString steamPath = QDir::homePath() + "/Library/Application Support/Steam";

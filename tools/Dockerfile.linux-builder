@@ -1,0 +1,15 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ninja-build g++ git python3 python3-pip \
+    libgl1-mesa-dev libssl-dev \
+    libglib2.0-0 \
+    libfontconfig1-dev libfreetype6-dev libdbus-1-dev \
+    libxcb-cursor0 libxkbcommon-x11-0 \
+    zip \
+    && rm -rf /var/lib/apt/lists/*
+
+# cmake from pip: apt on Ubuntu 22.04 ships 3.22, project requires 3.24+
+RUN pip3 install --no-cache-dir cmake aqtinstall

@@ -49,11 +49,12 @@ jobs:
       if: runner.os == 'Windows'
       uses: seanmiddleditch/gha-setup-ninja@v5
 
-    - name: Install Ninja (Linux)
+    - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y ninja-build
+        sudo apt-get install -y ninja-build libgl1-mesa-dev libssl-dev \
+          libxcb-cursor0 libxkbcommon-x11-0
 
     - name: Configure CMake
       run: |
@@ -63,7 +64,7 @@ jobs:
       run: |
         cmake --build build/${{ matrix.build_type }}
 
-    - name: Test (Windows Debug)
-      if: runner.os == 'Windows' && matrix.build_type == 'Debug'
+    - name: Test (Debug)
+      if: matrix.build_type == 'Debug'
       run: |
         ctest --test-dir build/${{ matrix.build_type }} --output-on-failure
