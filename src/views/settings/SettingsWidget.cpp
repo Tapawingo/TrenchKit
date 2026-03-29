@@ -41,6 +41,9 @@
 #include <objbase.h>
 #include <shobjidl.h>
 #endif
+#ifdef Q_OS_LINUX
+#include <QProcess>
+#endif
 
 SettingsWidget::SettingsWidget(QWidget *parent, UpdaterService *updater)
     : QWidget(parent),
@@ -827,6 +830,19 @@ bool SettingsWidget::createShortcut(const QString &shortcutPath, const QString &
     CoUninitialize();
 
     return success;
+#elif defined(Q_OS_LINUX)
+    const QString content =
+        QStringLiteral("[Desktop Entry]\nVersion=1.0\nType=Application\n"
+                       "Name=TrenchKit\nComment=") + description +
+        QStringLiteral("\nExec=\"") + targetPath +
+        QStringLiteral("\"\nTerminal=false\nCategories=Game;\n");
+    QFile f(shortcutPath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    f.write(content.toUtf8());
+    f.close();
+    f.setPermissions(f.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeUser);
+    return true;
 #else
     Q_UNUSED(shortcutPath);
     Q_UNUSED(targetPath);
@@ -860,6 +876,27 @@ void SettingsWidget::onAddDesktopShortcutClicked() {
             MessageModal::warning(m_modalManager, tr("Error"),
                 tr("Failed to create desktop shortcut."));
         }
+    }
+#elif defined(Q_OS_LINUX)
+    const QString desktopPath =
+        QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
+        + QStringLiteral("/TrenchKit.desktop");
+    const QString exePath = QCoreApplication::applicationFilePath();
+    if (QFile::exists(desktopPath)) {
+        if (m_modalManager)
+            MessageModal::information(m_modalManager, tr("Shortcut Already Exists"),
+                tr("A desktop shortcut for TrenchKit already exists."));
+        return;
+    }
+    const bool linuxSuccess = createShortcut(desktopPath, exePath,
+                                             QStringLiteral("TrenchKit - Foxhole Mod Manager"));
+    if (m_modalManager) {
+        if (linuxSuccess)
+            MessageModal::information(m_modalManager, tr("Success"),
+                tr("Desktop shortcut created successfully."));
+        else
+            MessageModal::warning(m_modalManager, tr("Error"),
+                tr("Failed to create desktop shortcut."));
     }
 #else
     if (m_modalManager) {
@@ -895,6 +932,28 @@ void SettingsWidget::onAddStartMenuShortcutClicked() {
             MessageModal::warning(m_modalManager, tr("Error"),
                 tr("Failed to create Start Menu shortcut."));
         }
+    }
+#elif defined(Q_OS_LINUX)
+    const QString appsPath =
+        QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
+    QDir().mkpath(appsPath);
+    const QString shortcutPath = appsPath + QStringLiteral("/TrenchKit.desktop");
+    const QString exePath = QCoreApplication::applicationFilePath();
+    if (QFile::exists(shortcutPath)) {
+        if (m_modalManager)
+            MessageModal::information(m_modalManager, tr("Shortcut Already Exists"),
+                tr("An application menu shortcut for TrenchKit already exists."));
+        return;
+    }
+    const bool linuxSuccess = createShortcut(shortcutPath, exePath,
+                                             QStringLiteral("TrenchKit - Foxhole Mod Manager"));
+    if (m_modalManager) {
+        if (linuxSuccess)
+            MessageModal::information(m_modalManager, tr("Success"),
+                tr("Application menu shortcut created successfully."));
+        else
+            MessageModal::warning(m_modalManager, tr("Error"),
+                tr("Failed to create application menu shortcut."));
     }
 #else
     if (m_modalManager) {
@@ -933,6 +992,10 @@ bool SettingsWidget::isTkprofileAssociationSet() const {
     const QString progId = classes.value(".").toString();
     classes.endGroup();
     return progId == QStringLiteral("TrenchKit.Profile");
+#elif defined(Q_OS_LINUX)
+    return QFileInfo(
+        QDir::homePath() + "/.local/share/mime/packages/application-x-tkprofile.xml"
+    ).exists();
 #else
     return false;
 #endif
@@ -964,6 +1027,47 @@ bool SettingsWidget::registerTkprofileAssociation() {
     classes.sync();
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
     return classes.status() == QSettings::NoError;
+#elif defined(Q_OS_LINUX)
+    // 1. Write MIME type XML
+    const QString mimeDir = QDir::homePath() + "/.local/share/mime/packages";
+    if (!QDir().mkpath(mimeDir))
+        return false;
+    const QString mimeXml = mimeDir + "/application-x-tkprofile.xml";
+    QFile f(mimeXml);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+        return false;
+    f.write("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+            "<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">\n"
+            "  <mime-type type=\"application/x-tkprofile\">\n"
+            "    <comment>TrenchKit Profile</comment>\n"
+            "    <glob pattern=\"*.tkprofile\"/>\n"
+            "  </mime-type>\n"
+            "</mime-info>\n");
+    f.close();
+    QProcess::execute(QStringLiteral("update-mime-database"),
+                      { QDir::homePath() + "/.local/share/mime" });
+
+    // 2. Create/update .desktop file with MimeType
+    const QString appsDir =
+        QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
+    QDir().mkpath(appsDir);
+    const QString desktopPath = appsDir + "/TrenchKit.desktop";
+    const QString exePath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    const QString desktop =
+        QStringLiteral("[Desktop Entry]\nVersion=1.0\nType=Application\n"
+                       "Name=TrenchKit\n"
+                       "Comment=TrenchKit - Foxhole Mod Manager\n"
+                       "Exec=\"") + exePath + QStringLiteral("\" \"%f\"\n"
+                       "Terminal=false\nCategories=Game;\n"
+                       "MimeType=application/x-tkprofile;\n");
+    QFile df(desktopPath);
+    if (df.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        df.write(desktop.toUtf8());
+        df.close();
+        df.setPermissions(df.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeUser);
+    }
+    QProcess::execute(QStringLiteral("update-desktop-database"), { appsDir });
+    return true;
 #else
     return false;
 #endif
