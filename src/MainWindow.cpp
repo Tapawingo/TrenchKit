@@ -810,9 +810,9 @@ void MainWindow::launchUpdater(const QString &stagingDir, const QString &updates
     const QString exeName = QFileInfo(QCoreApplication::applicationFilePath()).fileName();
 
 #if defined(Q_OS_WIN)
-    const QString updaterExe = QDir(appDir).filePath("updater.exe");
+    const QString updaterExe = QDir(appDir).filePath("TrenchKitUpdater.exe");
 #else
-    const QString updaterExe = QDir(appDir).filePath("updater");
+    const QString updaterExe = QDir(appDir).filePath("TrenchKitUpdater");
 #endif
 
     if (!QFileInfo::exists(updaterExe)) {

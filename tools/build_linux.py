@@ -78,7 +78,7 @@ def build_package_script(qt_dir: str, archive_name: str) -> str:
 
         # Binaries
         cp /build/src/TrenchKit    "$STAGE/"
-        cp /build/updater/updater  "$STAGE/"
+        cp /build/updater/TrenchKitUpdater  "$STAGE/"
 
         # TLS plugin
         TLS_SRC=/build/src/tls/libqopensslbackend.so
