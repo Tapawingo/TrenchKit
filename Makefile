@@ -3,8 +3,9 @@
 BUILD_DIR_DEBUG=build/debug
 BUILD_DIR_RELEASE=build/release
 GENERATOR=Ninja
+PACKAGE_RELEASE_ARGS=
 
-.PHONY: all configure-debug configure-release build-debug build-release test test-debug run-debug run-release translations-template clean
+.PHONY: all configure-debug configure-release build-debug build-release package-release package-release-no-installer package-release-require-installer test test-debug run-debug run-release translations-template clean
 
 all: build-debug
 
@@ -19,7 +20,17 @@ build-debug: configure-debug
 
 build-release: configure-release
 	cmake --build $(BUILD_DIR_RELEASE)
-	python tools/package_release.py --build-dir $(BUILD_DIR_RELEASE)
+	python tools/package_release.py --build-dir $(BUILD_DIR_RELEASE) $(PACKAGE_RELEASE_ARGS)
+
+package-release: build-release
+
+package-release-no-installer: configure-release
+	cmake --build $(BUILD_DIR_RELEASE)
+	python tools/package_release.py --build-dir $(BUILD_DIR_RELEASE) --skip-installer
+
+package-release-require-installer: configure-release
+	cmake --build $(BUILD_DIR_RELEASE)
+	python tools/package_release.py --build-dir $(BUILD_DIR_RELEASE) --require-installer
 
 test: test-debug
 
