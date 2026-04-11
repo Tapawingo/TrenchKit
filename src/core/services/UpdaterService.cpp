@@ -165,8 +165,10 @@ void UpdaterService::checkForUpdates() {
                    .arg(m_owner, m_repo));
 
     if (m_activeReply) {
+        m_activeReply->disconnect(this);
         m_activeReply->abort();
         m_activeReply->deleteLater();
+        m_activeReply = nullptr;
     }
 
     m_activeReply = m_nam.get(makeRequest(url));
