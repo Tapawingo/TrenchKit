@@ -24,6 +24,17 @@ struct InstallArgs {
 
 static fs::path g_updatesDir;
 
+static fs::path helperExecutableName(const char *argv0) {
+    if (argv0 && *argv0) {
+        return fs::path(argv0).filename();
+    }
+#if defined(_WIN32)
+    return fs::path(L"TrenchKitUpdater.exe");
+#else
+    return fs::path("TrenchKitUpdater");
+#endif
+}
+
 static void appendLog(const fs::path &appDir, const std::string &message) {
     std::error_code ec;
     fs::path updatesDir = g_updatesDir.empty() ? (appDir / "updates") : g_updatesDir;
@@ -101,7 +112,15 @@ static void waitForAppExit(const fs::path &appDir) {
 }
 #endif
 
-static bool copyRecursive(const fs::path &from, const fs::path &to) {
+static bool isHelperExecutable(const fs::path &name, const fs::path &helperName) {
+#if defined(_WIN32)
+    return equalsIgnoreCase(name.wstring(), helperName.wstring());
+#else
+    return name == helperName;
+#endif
+}
+
+static bool copyRecursive(const fs::path &from, const fs::path &to, const fs::path &helperName) {
     std::error_code ec;
     fs::create_directories(to, ec);
     if (ec) {
@@ -116,15 +135,9 @@ static bool copyRecursive(const fs::path &from, const fs::path &to) {
             return false;
         }
         const fs::path name = relPath.filename();
-#if defined(_WIN32)
-        if (equalsIgnoreCase(name.wstring(), L"updater.exe")) {
+        if (isHelperExecutable(name, helperName)) {
             continue;
         }
-#else
-        if (name == "updater") {
-            continue;
-        }
-#endif
         const fs::path destPath = to / relPath;
         if (entry.is_directory()) {
             fs::create_directories(destPath, ec);
@@ -184,20 +197,20 @@ static bool copyRecursive(const fs::path &from, const fs::path &to) {
     return true;
 }
 
-static void removeOldAppFiles(const fs::path &appDir) {
+static void removeOldAppFiles(const fs::path &appDir, const fs::path &helperName) {
     std::error_code ec;
     for (const auto &entry : fs::directory_iterator(appDir)) {
         const fs::path name = entry.path().filename();
 #if defined(_WIN32)
         const std::wstring entryName = name.wstring();
-        if (equalsIgnoreCase(entryName, L"updater.exe")) {
+        if (equalsIgnoreCase(entryName, helperName.wstring())) {
             continue;
         }
         if (equalsIgnoreCase(entryName, L"updates")) {
             continue;
         }
 #else
-        if (name == "updater" || name == "updates") {
+        if (name == helperName || name == "updates") {
             continue;
         }
 #endif
@@ -225,10 +238,11 @@ static bool launchApp(const fs::path &appDir, const std::wstring &exeName) {
 int main(int argc, char **argv) {
     InstallArgs args;
     if (!parseArgs(argc, argv, args)) {
-        std::cerr << "Usage: updater --install --app-dir <dir> --new-dir <dir> "
+        std::cerr << "Usage: TrenchKitUpdater --install --app-dir <dir> --new-dir <dir> "
                      "--exe-name <name> [--updates-dir <dir>]\n";
         return 1;
     }
+    const fs::path helperName = helperExecutableName(argv[0]);
 
     if (!args.updatesDir.empty()) {
         g_updatesDir = args.updatesDir;
@@ -256,7 +270,7 @@ int main(int argc, char **argv) {
     }
 
     appendLog(args.appDir, "Copying new version files.");
-    if (!copyRecursive(args.newDir, args.appDir)) {
+    if (!copyRecursive(args.newDir, args.appDir, helperName)) {
         logAndStderr(args.appDir, "Failed to copy new version files.");
 #if defined(_WIN32)
         showErrorDialog(L"Update failed while copying new version files.");
