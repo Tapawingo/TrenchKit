@@ -5,6 +5,7 @@
 #include "core/utils/TranslationManager.h"
 #include <QTimer>
 #include <QCoreApplication>
+#include <QThreadPool>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -43,10 +44,12 @@ static int run(int argc, char *argv[]) {
     // Set application icon (for taskbar, alt-tab, etc.)
     app.setWindowIcon(QIcon(":/icon.png"));
 
-    UpdateCleanup::run();
-
     MainWindow w;
     w.show();
+
+    QTimer::singleShot(0, &app, []() {
+        QThreadPool::globalInstance()->start([]() { UpdateCleanup::run(); });
+    });
 
     if (app.arguments().contains("--smoke-test")) {
         QTimer::singleShot(200, &app, &QCoreApplication::quit);

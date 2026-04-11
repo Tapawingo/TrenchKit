@@ -7,7 +7,6 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QDebug>
-#include <QSslSocket>
 #include <QMetaObject>
 #include <algorithm>
 
@@ -147,15 +146,6 @@ UpdaterService::SemVer UpdaterService::parseVersionFromTag(const QString& tag) {
 
 void UpdaterService::checkForUpdates() {
     emit checkingStarted();
-
-    if (!QSslSocket::supportsSsl()) {
-        const QString message = QStringLiteral("TLS initialization failed. No TLS backend is available.");
-        qWarning() << "Updater:" << message
-                   << "Build SSL:" << QSslSocket::sslLibraryBuildVersionString()
-                   << "Runtime SSL:" << QSslSocket::sslLibraryVersionString();
-        emit errorOccurred(message);
-        return;
-    }
 
     qInfo() << "Updater: checking for updates.";
     const QUrl url = m_includePrereleases
