@@ -20,7 +20,7 @@
 
 ## Quick Start
 1. Download the latest release from the [Releases page](https://github.com/Tapawingo/TrenchKit/releases)
-2. Extract and run `TrenchKit.exe`
+2. Run `TrenchKit-Setup-<version>.exe`, or extract `windows-<version>.zip` for portable use
 3. Select your Foxhole install directory
 4. Add mods and enable them with one click
 
@@ -141,6 +141,22 @@ cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release
 ### 5) Build
 ```sh
 cmake --build build/release
+```
+
+### 6) Package a Windows release
+```sh
+python tools/package_release.py --build-dir build/release
+```
+
+If Inno Setup 6 is installed, this produces both:
+- `dist/windows-<version>.zip`
+- `dist/TrenchKit-Setup-<version>.exe`
+
+If Inno Setup is not installed, the script still produces the portable zip.
+
+To require installer generation:
+```sh
+python tools/package_release.py --build-dir build/release --require-installer
 ```
 
 ## If CMake can’t find Qt

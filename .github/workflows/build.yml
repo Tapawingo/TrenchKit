@@ -64,6 +64,11 @@ jobs:
       run: |
         cmake --build build/${{ matrix.build_type }}
 
+    - name: Package Windows release payload
+      if: runner.os == 'Windows' && matrix.build_type == 'Release'
+      run: |
+        python tools/package_release.py --build-dir build/${{ matrix.build_type }} --skip-installer
+
     - name: Test (Debug)
       if: matrix.build_type == 'Debug'
       run: |

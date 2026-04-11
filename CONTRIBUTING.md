@@ -49,6 +49,14 @@ cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build/release
 ```
 
+### Package a Windows release
+```sh
+python tools/package_release.py --build-dir build/release
+```
+
+With Inno Setup 6 installed, this generates both the portable zip and the Windows installer.
+Use `--require-installer` when you want packaging to fail instead of silently skipping the installer.
+
 ## If Qt isn’t found
 Prefer one of these approaches:
 
