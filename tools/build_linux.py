@@ -84,7 +84,7 @@ def build_package_script(qt_dir: str, archive_name: str) -> str:
         TLS_SRC=/build/src/tls/libqopensslbackend.so
         [ -f "$TLS_SRC" ] && cp "$TLS_SRC" "$STAGE/tls/"
 
-        # xcb platform plugin
+        # xcb platform plugin (keep XCB_SRC for the ldd sweep below)
         XCB_SRC="{qt_dir}/plugins/platforms/libqxcb.so"
         [ -f "$XCB_SRC" ] && cp "$XCB_SRC" "$STAGE/platforms/"
 
@@ -99,15 +99,32 @@ def build_package_script(qt_dir: str, archive_name: str) -> str:
             [ -n "$src" ] && cp "$src" "$STAGE/lib/"
         done
 
-        # Also copy any Qt libs that the xcb plugin links against
+        # Sweep all Qt source libs for any deps Qt bundles in its own dir
+        # (covers ICU 73, libzstd, and anything else Qt ships alongside its modules)
+        for qt_src in "$QT_LIB_DIR"/libQt6*.so.*; do
+            [ -f "$qt_src" ] || continue
+            ldd "$qt_src" 2>/dev/null | awk '/=> \\// {{print $3}}' | while read -r dep; do
+                [[ "$dep" == /qt/* ]] || continue
+                base=$(basename "$dep")
+                [ -f "$dep" ] && [ ! -f "$STAGE/lib/$base" ] && cp "$dep" "$STAGE/lib/"
+            done
+        done
+        # Same sweep for the xcb plugin
         if [ -f "$STAGE/platforms/libqxcb.so" ]; then
-            ldd "$STAGE/platforms/libqxcb.so" 2>/dev/null \\
-                | awk '/=> \\/qt\\// {{print $3}}' \\
-                | while read -r dep; do
-                    base=$(basename "$dep")
-                    [ -f "$dep" ] && [ ! -f "$STAGE/lib/$base" ] && cp "$dep" "$STAGE/lib/"
-                done
+            ldd "$XCB_SRC" 2>/dev/null | awk '/=> \\// {{print $3}}' | while read -r dep; do
+                [[ "$dep" == /qt/* ]] || continue
+                base=$(basename "$dep")
+                [ -f "$dep" ] && [ ! -f "$STAGE/lib/$base" ] && cp "$dep" "$STAGE/lib/"
+            done
         fi
+
+        # Create SONAME symlinks (e.g. libQt6Core.so.6 -> libQt6Core.so.6.10.1)
+        # Without these the ELF loader cannot find the bundled libs and falls back to system Qt
+        for f in "$STAGE/lib/"*.so.*; do
+            [ -L "$f" ] && continue
+            soname=$(readelf -d "$f" 2>/dev/null | awk '/SONAME/ {{gsub(/[\\[\\]]/, "", $NF); print $NF}}')
+            [ -n "$soname" ] && [ ! -e "$STAGE/lib/$soname" ] && ln -sf "$(basename "$f")" "$STAGE/lib/$soname"
+        done
 
         # Launcher script (sets LD_LIBRARY_PATH and QT_PLUGIN_PATH)
         cat > "$STAGE/TrenchKit.sh" << 'LAUNCHER'
@@ -121,7 +138,7 @@ LAUNCHER
 
         echo "==> Creating archive /dist/{archive_name}..."
         cd "$STAGE"
-        zip -r "/dist/{archive_name}" .
+        zip -ry "/dist/{archive_name}" .
 
         echo "==> Done."
     """)
