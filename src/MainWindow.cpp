@@ -673,6 +673,14 @@ void MainWindow::onUpdateDownloadFinished(const QString &savePath) {
         }
     }
 
+#ifdef Q_OS_LINUX
+    if (!qEnvironmentVariable("APPIMAGE").isEmpty()) {
+        // AppImage mode: the downloaded file IS the update — no extraction needed
+        launchUpdater(savePath, updatesDir);
+        return;
+    }
+#endif
+
     QString error;
     if (!stageUpdate(savePath, version, updatesDir, &error)) {
         MessageModal::warning(m_modalManager, tr("Update Error"), error);
@@ -750,15 +758,6 @@ void MainWindow::closeUpdateDialog() {
 }
 
 QString MainWindow::selectUpdateAssetName() const {
-    QString platform;
-#if defined(Q_OS_WIN)
-    platform = "windows";
-#elif defined(Q_OS_LINUX)
-    platform = "linux";
-#else
-    return QString();
-#endif
-
     QString version = m_updateRelease.version.toString();
     if (version.isEmpty()) {
         version = m_updateRelease.tagName;
@@ -771,7 +770,15 @@ QString MainWindow::selectUpdateAssetName() const {
         return QString();
     }
 
-    return QString("%1-%2.zip").arg(platform, version);
+#if defined(Q_OS_WIN)
+    return QStringLiteral("windows-%1.zip").arg(version);
+#elif defined(Q_OS_LINUX)
+    if (!qEnvironmentVariable("APPIMAGE").isEmpty())
+        return QStringLiteral("TrenchKit-%1-x86_64.AppImage").arg(version);
+    return QStringLiteral("linux-%1.zip").arg(version);
+#else
+    return QString();
+#endif
 }
 
 bool MainWindow::stageUpdate(const QString &archivePath,
@@ -806,6 +813,42 @@ bool MainWindow::stageUpdate(const QString &archivePath,
 }
 
 void MainWindow::launchUpdater(const QString &stagingDir, const QString &updatesDir) {
+#ifdef Q_OS_LINUX
+    const QString appImagePath = qEnvironmentVariable("APPIMAGE");
+    if (!appImagePath.isEmpty()) {
+        // AppImage mode: copy the updater out of the AppImage mount before quitting,
+        // because the mount point disappears once the process exits.
+        const QString appDir = qEnvironmentVariable("APPDIR");
+        const QString updaterSrc = QDir(appDir).filePath("usr/bin/TrenchKitUpdater");
+        const QString tmpUpdater = QDir::tempPath() + QStringLiteral("/TrenchKitUpdater_update");
+        QFile::remove(tmpUpdater);
+        if (!QFile::copy(updaterSrc, tmpUpdater)) {
+            MessageModal::warning(m_modalManager, tr("Update Error"),
+                                  tr("Failed to stage updater helper."));
+            return;
+        }
+        QFile::setPermissions(tmpUpdater,
+            QFileDevice::ExeOwner | QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+
+        QStringList args;
+        args << "--install"
+             << "--appimage-path" << appImagePath
+             << "--new-file"      << stagingDir   // stagingDir holds new AppImage path in this mode
+             << "--updates-dir"   << updatesDir
+             << "--pid"           << QString::number(QCoreApplication::applicationPid());
+
+        qInfo() << "Updater: launching AppImage helper" << tmpUpdater;
+        qint64 pid = 0;
+        if (!QProcess::startDetached(tmpUpdater, args, QDir::tempPath(), &pid)) {
+            MessageModal::warning(m_modalManager, tr("Update Error"),
+                                  tr("Failed to launch updater helper."));
+            return;
+        }
+        QCoreApplication::quit();
+        return;
+    }
+#endif
+
     const QString appDir = QCoreApplication::applicationDirPath();
     const QString exeName = QFileInfo(QCoreApplication::applicationFilePath()).fileName();
 
@@ -822,10 +865,11 @@ void MainWindow::launchUpdater(const QString &stagingDir, const QString &updates
 
     QStringList args;
     args << "--install"
-         << "--app-dir" << appDir
-         << "--new-dir" << stagingDir
+         << "--app-dir"    << appDir
+         << "--new-dir"    << stagingDir
          << "--updates-dir" << updatesDir
-         << "--exe-name" << exeName;
+         << "--exe-name"   << exeName
+         << "--pid"        << QString::number(QCoreApplication::applicationPid());
 
     qInfo() << "Updater: launching helper" << updaterExe;
     qint64 pid = 0;

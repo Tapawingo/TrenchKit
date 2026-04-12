@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=TrenchKit
+Exec=TrenchKit
+Icon=io.github.tapawingo.trenchkit
+Categories=Game;Utility;
+Comment=Foxhole mod manager

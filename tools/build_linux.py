@@ -1,14 +1,15 @@
 """
-Build a self-contained Linux release binary using Docker and package it into dist/.
+Build a self-contained Linux AppImage using Docker and package it into dist/.
 
 Usage:
     python tools/build_linux.py [--qt-version 6.10.1] [--no-cache] [--reinstall-qt]
 
 Output:
-    dist/linux-{version}.zip
+    dist/TrenchKit-{version}-x86_64.AppImage
 
-Qt is installed once into a named Docker volume (trenchkit-qt-<version>) so
-subsequent builds are fast. Pass --reinstall-qt to force a fresh Qt install.
+Qt and AppImage tools (linuxdeploy, appimagetool) are cached in a named Docker
+volume (trenchkit-qt-<version>) so subsequent builds are fast. Pass --reinstall-qt
+to force a fresh Qt install (also re-downloads AppImage tools).
 
 Requires Docker to be installed and running.
 """
@@ -58,12 +59,36 @@ def qt_install_script(qt_version: str, qt_dir: str) -> str:
     """)
 
 
-def build_package_script(qt_dir: str, archive_name: str) -> str:
-    """Configures, builds, and packages TrenchKit inside the container."""
+def tools_install_script() -> str:
+    """Downloads linuxdeploy, linuxdeploy-plugin-qt, and appimagetool into /qt/tools/."""
+    return textwrap.dedent("""\
+        set -e
+        TOOLS=/qt/tools
+        mkdir -p "$TOOLS"
+        dl() {
+            local name="$1" url="$2"
+            if [ ! -f "$TOOLS/$name" ]; then
+                echo "==> Downloading $name..."
+                wget -q --show-progress -O "$TOOLS/$name" "$url"
+                chmod +x "$TOOLS/$name"
+            else
+                echo "==> $name already cached, skipping."
+            fi
+        }
+        dl linuxdeploy           https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+        dl linuxdeploy-plugin-qt https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+        dl appimagetool          https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        echo "==> AppImage tools ready."
+    """)
+
+
+def build_package_script(qt_dir: str, version: str, archive_name: str) -> str:
+    """Configures, builds, and packages TrenchKit as an AppImage inside the container."""
     return textwrap.dedent(f"""\
         set -e
         export PATH="{qt_dir}/bin:$PATH"
         export CMAKE_PREFIX_PATH="{qt_dir}"
+        export APPIMAGE_EXTRACT_AND_RUN=1
 
         echo "==> Configuring..."
         cmake -S /src -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
@@ -71,74 +96,42 @@ def build_package_script(qt_dir: str, archive_name: str) -> str:
         echo "==> Building..."
         cmake --build /build
 
-        echo "==> Packaging..."
-        STAGE=/tmp/stage
-        rm -rf "$STAGE"
-        mkdir -p "$STAGE/lib" "$STAGE/platforms" "$STAGE/tls"
+        echo "==> Staging AppDir..."
+        APPDIR=/tmp/AppDir
+        rm -rf "$APPDIR"
+        mkdir -p "$APPDIR/usr/bin" \\
+                 "$APPDIR/usr/share/applications" \\
+                 "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 
-        # Binaries
-        cp /build/src/TrenchKit    "$STAGE/"
-        cp /build/updater/TrenchKitUpdater  "$STAGE/"
+        cp /build/src/TrenchKit            "$APPDIR/usr/bin/"
+        cp /build/updater/TrenchKitUpdater "$APPDIR/usr/bin/"
 
-        # TLS plugin
+        cp /src/extras/linux/io.github.tapawingo.trenchkit.desktop \\
+           "$APPDIR/usr/share/applications/"
+        cp /src/extras/logo/logo_transparent.png \\
+           "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
+
+        # TLS plugin — place it where Qt expects it inside the AppDir
         TLS_SRC=/build/src/tls/libqopensslbackend.so
-        [ -f "$TLS_SRC" ] && cp "$TLS_SRC" "$STAGE/tls/"
-
-        # xcb platform plugin (keep XCB_SRC for the ldd sweep below)
-        XCB_SRC="{qt_dir}/plugins/platforms/libqxcb.so"
-        [ -f "$XCB_SRC" ] && cp "$XCB_SRC" "$STAGE/platforms/"
-
-        # Qt shared libraries needed by the binary and plugins
-        QT_LIB_DIR="{qt_dir}/lib"
-        for lib in \\
-            libQt6Core libQt6Gui libQt6Widgets \\
-            libQt6Network libQt6Concurrent libQt6WebSockets \\
-            libQt6XcbQpa libQt6DBus libQt6OpenGL
-        do
-            src=$(find "$QT_LIB_DIR" -maxdepth 1 -name "${{lib}}.so.*" ! -name "*.debug" | sort | tail -1)
-            [ -n "$src" ] && cp "$src" "$STAGE/lib/"
-        done
-
-        # Sweep all Qt source libs for any deps Qt bundles in its own dir
-        # (covers ICU 73, libzstd, and anything else Qt ships alongside its modules)
-        for qt_src in "$QT_LIB_DIR"/libQt6*.so.*; do
-            [ -f "$qt_src" ] || continue
-            ldd "$qt_src" 2>/dev/null | awk '/=> \\// {{print $3}}' | while read -r dep; do
-                [[ "$dep" == /qt/* ]] || continue
-                base=$(basename "$dep")
-                [ -f "$dep" ] && [ ! -f "$STAGE/lib/$base" ] && cp "$dep" "$STAGE/lib/"
-            done
-        done
-        # Same sweep for the xcb plugin
-        if [ -f "$STAGE/platforms/libqxcb.so" ]; then
-            ldd "$XCB_SRC" 2>/dev/null | awk '/=> \\// {{print $3}}' | while read -r dep; do
-                [[ "$dep" == /qt/* ]] || continue
-                base=$(basename "$dep")
-                [ -f "$dep" ] && [ ! -f "$STAGE/lib/$base" ] && cp "$dep" "$STAGE/lib/"
-            done
+        if [ -f "$TLS_SRC" ]; then
+            mkdir -p "$APPDIR/usr/plugins/tls"
+            cp "$TLS_SRC" "$APPDIR/usr/plugins/tls/"
         fi
 
-        # Create SONAME symlinks (e.g. libQt6Core.so.6 -> libQt6Core.so.6.10.1)
-        # Without these the ELF loader cannot find the bundled libs and falls back to system Qt
-        for f in "$STAGE/lib/"*.so.*; do
-            [ -L "$f" ] && continue
-            soname=$(readelf -d "$f" 2>/dev/null | awk '/SONAME/ {{gsub(/[\\[\\]]/, "", $NF); print $NF}}')
-            [ -n "$soname" ] && [ ! -e "$STAGE/lib/$soname" ] && ln -sf "$(basename "$f")" "$STAGE/lib/$soname"
-        done
+        echo "==> Running linuxdeploy with Qt plugin..."
+        export QMAKE="{qt_dir}/bin/qmake"
+        # Run the Qt plugin standalone first so it can set up Qt-specific dirs
+        /qt/tools/linuxdeploy-plugin-qt --appdir "$APPDIR"
+        # Then run linuxdeploy to bundle all remaining libs and finalize the AppDir
+        /qt/tools/linuxdeploy \\
+            --appdir "$APPDIR" \\
+            --plugin qt \\
+            --executable "$APPDIR/usr/bin/TrenchKit" \\
+            --desktop-file "$APPDIR/usr/share/applications/io.github.tapawingo.trenchkit.desktop" \\
+            --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
 
-        # Launcher script (sets LD_LIBRARY_PATH and QT_PLUGIN_PATH)
-        cat > "$STAGE/TrenchKit.sh" << 'LAUNCHER'
-#!/bin/bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
-export LD_LIBRARY_PATH="$DIR/lib:$LD_LIBRARY_PATH"
-export QT_PLUGIN_PATH="$DIR"
-exec "$DIR/TrenchKit" "$@"
-LAUNCHER
-        chmod +x "$STAGE/TrenchKit.sh"
-
-        echo "==> Creating archive /dist/{archive_name}..."
-        cd "$STAGE"
-        zip -ry "/dist/{archive_name}" .
+        echo "==> Building AppImage..."
+        ARCH=x86_64 /qt/tools/appimagetool "$APPDIR" "/dist/{archive_name}"
 
         echo "==> Done."
     """)
@@ -146,7 +139,7 @@ LAUNCHER
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Build a Linux release binary via Docker and package it into dist/."
+        description="Build a Linux AppImage via Docker and package it into dist/."
     )
     parser.add_argument(
         "--qt-version", default=DEFAULT_QT_VERSION,
@@ -158,7 +151,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--reinstall-qt", action="store_true",
-        help="Delete the Qt cache volume and re-download Qt"
+        help="Delete the Qt cache volume and re-download Qt and AppImage tools"
     )
     args = parser.parse_args()
 
@@ -170,7 +163,7 @@ def main() -> int:
     qt_volume   = f"trenchkit-qt-{args.qt_version}"
     qt_dir      = f"/qt/{args.qt_version}/gcc_64"
 
-    # ── 1. Build Docker image (system packages + cmake + aqtinstall only) ───
+    # ── 1. Build Docker image ────────────────────────────────────────────────
     print(f"\n==> Building Docker image {IMAGE_TAG} ...\n")
     docker_build = [
         "docker", "build",
@@ -196,9 +189,18 @@ def main() -> int:
         "bash", "-c", qt_install_script(args.qt_version, qt_dir),
     ])
 
-    # ── 4. Build + package ───────────────────────────────────────────────────
+    # ── 4. Install AppImage tools into the same volume (skipped if cached) ───
+    print(f"\n==> Ensuring AppImage tools are in cache volume {qt_volume} ...\n")
+    run([
+        "docker", "run", "--rm",
+        "-v", f"{qt_volume}:/qt",
+        IMAGE_TAG,
+        "bash", "-c", tools_install_script(),
+    ])
+
+    # ── 5. Build + package ───────────────────────────────────────────────────
     version      = read_version(project_root)
-    archive_name = f"linux-{version}.zip"
+    archive_name = f"TrenchKit-{version}-x86_64.AppImage"
     archive_path = dist_dir / archive_name
 
     if archive_path.exists():
@@ -211,7 +213,7 @@ def main() -> int:
         "-v", f"{project_root}:/src:ro",
         "-v", f"{dist_dir}:/dist",
         IMAGE_TAG,
-        "bash", "-c", build_package_script(qt_dir, archive_name),
+        "bash", "-c", build_package_script(qt_dir, version, archive_name),
     ])
 
     print(f"\nPackaged release: {archive_path}")
