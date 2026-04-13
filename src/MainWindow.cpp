@@ -18,6 +18,7 @@
 #include <QSettings>
 #include <QShowEvent>
 #include <QPaintEvent>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QEvent>
@@ -38,6 +39,8 @@
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <windowsx.h>
+#else
+#include <QWindow>
 #endif
 
 namespace {
@@ -138,6 +141,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     setMinimumSize(800, 560);
     resize(1000, 700);
+#ifndef Q_OS_WIN
+    setMouseTracking(true);
+#endif
 
     // Add initial log entry
     ActivityLogWidget * const log = m_rightPanelWidget->getActivityLog();
@@ -221,6 +227,42 @@ void MainWindow::onMaximizeClicked() {
         showMaximized();
     }
 }
+
+#ifndef Q_OS_WIN
+static Qt::Edges resizeEdges(const QPoint &pos, const QRect &r, int b) {
+    Qt::Edges e;
+    if (pos.x() < b)               e |= Qt::LeftEdge;
+    if (pos.x() > r.width()  - b)  e |= Qt::RightEdge;
+    if (pos.y() < b)               e |= Qt::TopEdge;
+    if (pos.y() > r.height() - b)  e |= Qt::BottomEdge;
+    return e;
+}
+
+void MainWindow::mousePressEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton && !isMaximized()) {
+        const Qt::Edges edges = resizeEdges(event->pos(), rect(), 8);
+        if (edges && windowHandle()) {
+            windowHandle()->startSystemResize(edges);
+            return;
+        }
+    }
+    QMainWindow::mousePressEvent(event);
+}
+
+void MainWindow::mouseMoveEvent(QMouseEvent *event) {
+    if (!isMaximized()) {
+        const Qt::Edges e = resizeEdges(event->pos(), rect(), 8);
+        if      ((e & Qt::LeftEdge  && e & Qt::TopEdge)    ||
+                 (e & Qt::RightEdge && e & Qt::BottomEdge)) setCursor(Qt::SizeFDiagCursor);
+        else if ((e & Qt::RightEdge && e & Qt::TopEdge)    ||
+                 (e & Qt::LeftEdge  && e & Qt::BottomEdge)) setCursor(Qt::SizeBDiagCursor);
+        else if (e & (Qt::LeftEdge | Qt::RightEdge))        setCursor(Qt::SizeHorCursor);
+        else if (e & (Qt::TopEdge  | Qt::BottomEdge))       setCursor(Qt::SizeVerCursor);
+        else                                                 unsetCursor();
+    }
+    QMainWindow::mouseMoveEvent(event);
+}
+#endif
 
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result) {
 #ifdef Q_OS_WIN

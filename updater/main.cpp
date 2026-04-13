@@ -371,6 +371,18 @@ int main(int argc, char **argv) {
     }
 #else
     const fs::path exePath = args.appDir / std::string(args.exeName.begin(), args.exeName.end());
+
+    // fs::copy_file does not preserve execute bits — set them explicitly.
+    {
+        std::error_code permEc;
+        fs::permissions(exePath,
+            fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
+            fs::perm_options::add, permEc);
+        if (permEc) {
+            logAndStderr(logDir, "Warning: failed to set executable permissions: " + permEc.message());
+        }
+    }
+
     appendLog(logDir, "Relaunching application: " + exePath.string());
     pid_t pid = fork();
     if (pid == 0) {

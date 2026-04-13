@@ -8,9 +8,15 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QProcess>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QDir>
 #include <QFile>
 #include <QTimer>
+
+#ifdef Q_OS_LINUX
+static constexpr int FOXHOLE_STEAM_APP_ID = 1454690;
+#endif
 
 LaunchWidget::LaunchWidget(QWidget *parent)
     : QWidget(parent)
@@ -99,6 +105,15 @@ void LaunchWidget::setupConnections() {
 }
 
 void LaunchWidget::onLaunchWithMods() {
+#ifdef Q_OS_LINUX
+    if (m_foxholeInstallPath.isEmpty()) {
+        emit errorOccurred(tr("Foxhole installation not found. Please check your installation path."));
+        return;
+    }
+    QDesktopServices::openUrl(QUrl(QStringLiteral("steam://run/%1").arg(FOXHOLE_STEAM_APP_ID)));
+    emit gameLaunched(true);
+    return;
+#endif
     QString exePath = getFoxholeExecutablePath();
 
     if (exePath.isEmpty()) {
@@ -143,6 +158,11 @@ void LaunchWidget::onLaunchWithoutMods() {
             }
         }
 
+#ifdef Q_OS_LINUX
+        QDesktopServices::openUrl(QUrl(QStringLiteral("steam://run/%1").arg(FOXHOLE_STEAM_APP_ID)));
+        m_launchTimer.start();
+        emit gameLaunched(false);
+#else
         if (m_gameProcess) {
             m_gameProcess->deleteLater();
         }
@@ -169,6 +189,7 @@ void LaunchWidget::onLaunchWithoutMods() {
             m_waitingForGameExit = false;
             emit gameLaunched(false);
         }
+#endif
 
         if (!m_modsToRestore.isEmpty()) {
             m_waitingForGameStart = true;
@@ -359,8 +380,16 @@ bool LaunchWidget::isGameRunning() const {
     }
     return false;
 #else
-    if (m_gameProcess) {
-        return m_gameProcess->state() != QProcess::NotRunning;
+    const QStringList procNames = {
+        QStringLiteral("FoxholeClient-Win64-Shipping"),
+        QStringLiteral("War-Win64-Shipping"),
+        QStringLiteral("FoxholeClient"),
+    };
+    for (const QString &name : procNames) {
+        QProcess pgrep;
+        pgrep.start(QStringLiteral("pgrep"), QStringList() << QStringLiteral("-f") << name);
+        if (pgrep.waitForFinished(1000) && pgrep.exitCode() == 0)
+            return true;
     }
     return false;
 #endif

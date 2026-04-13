@@ -5,3 +5,4 @@ Exec=TrenchKit
 Icon=io.github.tapawingo.trenchkit
 Categories=Game;Utility;
 Comment=Foxhole mod manager
+Terminal=false

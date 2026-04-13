@@ -722,6 +722,12 @@ bool ModManager::copyModToPaks(const ModInfo &mod) {
         return false;
     }
 
+#ifdef Q_OS_LINUX
+    QFile::setPermissions(destPath,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+        QFileDevice::ReadGroup | QFileDevice::ReadOther);
+#endif
+
     {
         QMutexLocker locker(&m_modsMutex);
         auto it = std::ranges::find_if(m_mods,
@@ -827,6 +833,11 @@ void ModManager::renumberEnabledMods() {
         if (mod.numberedFileName == newNumberedName) {
             if (!QFile::exists(expectedPath) && QFile::exists(sourcePath)) {
                 QFile::copy(sourcePath, expectedPath);
+#ifdef Q_OS_LINUX
+                QFile::setPermissions(expectedPath,
+                    QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                    QFileDevice::ReadGroup | QFileDevice::ReadOther);
+#endif
                 QMutexLocker locker(&m_modsMutex);
                 auto it = std::ranges::find_if(m_mods,
                                        [&mod](const ModInfo &item) { return item.id == mod.id; });
@@ -854,6 +865,11 @@ void ModManager::renumberEnabledMods() {
 
         if (QFile::exists(sourcePath)) {
             QFile::copy(sourcePath, expectedPath);
+#ifdef Q_OS_LINUX
+            QFile::setPermissions(expectedPath,
+                QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                QFileDevice::ReadGroup | QFileDevice::ReadOther);
+#endif
             QMutexLocker locker(&m_modsMutex);
             auto it = std::ranges::find_if(m_mods,
                                    [&mod](const ModInfo &item) { return item.id == mod.id; });

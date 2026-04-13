@@ -166,21 +166,20 @@ bool InstallPathWidget::checkFoxholeInstallation(const QString &path) const {
         return false;
     }
 
-    // List of possible Foxhole executables
+#ifdef Q_OS_WIN
+    // Check for Windows executables
     QStringList possibleExes = {
         "Foxhole.exe",
         "FoxholeClient.exe",
         "FoxholeClient-Win64-Shipping.exe"
     };
 
-    // Check for executable in root directory
     for (const QString &exe : possibleExes) {
         if (QFile::exists(dir.filePath(exe))) {
             return true;
         }
     }
 
-    // Check for Foxhole executable in War/Binaries/Win64/
     QDir warDir = dir;
     if (warDir.cd("War") && warDir.cd("Binaries") && warDir.cd("Win64")) {
         for (const QString &exe : possibleExes) {
@@ -189,6 +188,7 @@ bool InstallPathWidget::checkFoxholeInstallation(const QString &path) const {
             }
         }
     }
+#endif
 
     // Check for other Foxhole-specific directories
     if (QDir(dir.filePath("War/Content/Paks")).exists() ||

@@ -118,6 +118,10 @@ void TitleBar::mousePressEvent(QMouseEvent *event) {
         m_dragging = true;
         m_dragPosition = event->globalPosition().toPoint() - window()->frameGeometry().topLeft();
         event->accept();
+        if (!window()->isMaximized() && window()->windowHandle()) {
+            if (window()->windowHandle()->startSystemMove())
+                m_dragging = false;
+        }
     }
 }
 
@@ -129,6 +133,11 @@ void TitleBar::mouseMoveEvent(QMouseEvent *event) {
             window()->showNormal();
             m_dragPosition = QPoint(static_cast<int>(window()->width() * relX),
                                     m_dragPosition.y());
+            if (window()->windowHandle() && window()->windowHandle()->startSystemMove()) {
+                m_dragging = false;
+                event->accept();
+                return;
+            }
         }
         window()->move(event->globalPosition().toPoint() - m_dragPosition);
         event->accept();

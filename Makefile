@@ -6,6 +6,12 @@ GENERATOR=Ninja
 PACKAGE_RELEASE_ARGS=
 BUILD_LINUX_ARGS=
 
+ifeq ($(OS),Windows_NT)
+EXE_EXT = .exe
+else
+EXE_EXT =
+endif
+
 .PHONY: all configure-debug configure-release build-debug build-release package-release package-release-no-installer package-release-require-installer package-linux-release test test-debug run-debug run-release translations-template clean
 
 all: build-debug
@@ -42,10 +48,10 @@ test-debug: build-debug
 	ctest --test-dir $(BUILD_DIR_DEBUG) --output-on-failure
 
 run-debug: build-debug
-	$(BUILD_DIR_DEBUG)/TrenchKit.exe
+	$(BUILD_DIR_DEBUG)/TrenchKit$(EXE_EXT)
 
 run-release: build-release
-	$(BUILD_DIR_RELEASE)/TrenchKit.exe
+	$(BUILD_DIR_RELEASE)/TrenchKit$(EXE_EXT)
 
 translations-template: configure-debug
 	cmake --build $(BUILD_DIR_DEBUG) --target update_translation_template

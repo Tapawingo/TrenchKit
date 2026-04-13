@@ -82,11 +82,11 @@ def tools_install_script() -> str:
     """)
 
 
-def build_package_script(qt_dir: str, version: str, archive_name: str) -> str:
-    """Configures, builds, and packages TrenchKit as an AppImage inside the container."""
+def build_package_script(qt_dir: str, version: str, appimage_name: str, zip_name: str) -> str:
+    """Configures, builds, and packages TrenchKit as an AppImage and zip inside the container."""
     return textwrap.dedent(f"""\
         set -e
-        export PATH="{qt_dir}/bin:$PATH"
+        export PATH="/qt/tools:{qt_dir}/bin:$PATH"
         export CMAKE_PREFIX_PATH="{qt_dir}"
         export APPIMAGE_EXTRACT_AND_RUN=1
 
@@ -108,30 +108,38 @@ def build_package_script(qt_dir: str, version: str, archive_name: str) -> str:
 
         cp /src/extras/linux/io.github.tapawingo.trenchkit.desktop \\
            "$APPDIR/usr/share/applications/"
-        cp /src/extras/logo/logo_transparent.png \\
-           "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
-
-        # TLS plugin — place it where Qt expects it inside the AppDir
-        TLS_SRC=/build/src/tls/libqopensslbackend.so
-        if [ -f "$TLS_SRC" ]; then
-            mkdir -p "$APPDIR/usr/plugins/tls"
-            cp "$TLS_SRC" "$APPDIR/usr/plugins/tls/"
-        fi
+        convert /src/extras/logo/logo_transparent.png \\
+            -resize 256x256 \\
+            "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
 
         echo "==> Running linuxdeploy with Qt plugin..."
         export QMAKE="{qt_dir}/bin/qmake"
-        # Run the Qt plugin standalone first so it can set up Qt-specific dirs
-        /qt/tools/linuxdeploy-plugin-qt --appdir "$APPDIR"
-        # Then run linuxdeploy to bundle all remaining libs and finalize the AppDir
         /qt/tools/linuxdeploy \\
             --appdir "$APPDIR" \\
             --plugin qt \\
             --executable "$APPDIR/usr/bin/TrenchKit" \\
+            --executable "$APPDIR/usr/bin/TrenchKitUpdater" \\
             --desktop-file "$APPDIR/usr/share/applications/io.github.tapawingo.trenchkit.desktop" \\
             --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
 
+        echo "==> Adding run.sh launcher for zip distribution..."
+        cat > "$APPDIR/trenchkit.sh" << 'RUNEOF'
+#!/bin/sh
+# Launcher for the portable zip distribution of TrenchKit.
+# Sets LD_LIBRARY_PATH so the bundled Qt and XCB libs are used instead of
+# whatever (possibly older) versions the system has installed.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$HERE/usr/lib:${{LD_LIBRARY_PATH:-}}"
+export QT_PLUGIN_PATH="$HERE/usr/plugins"
+exec "$HERE/usr/bin/TrenchKit" "$@"
+RUNEOF
+        chmod +x "$APPDIR/trenchkit.sh"
+
         echo "==> Building AppImage..."
-        ARCH=x86_64 /qt/tools/appimagetool "$APPDIR" "/dist/{archive_name}"
+        VERSION="{version}" ARCH=x86_64 /qt/tools/appimagetool "$APPDIR" "/dist/{appimage_name}"
+
+        echo "==> Building zip archive..."
+        (cd "$APPDIR" && zip -r "/dist/{zip_name}" .)
 
         echo "==> Done."
     """)
@@ -199,12 +207,15 @@ def main() -> int:
     ])
 
     # ── 5. Build + package ───────────────────────────────────────────────────
-    version      = read_version(project_root)
-    archive_name = f"TrenchKit-{version}-x86_64.AppImage"
-    archive_path = dist_dir / archive_name
+    version       = read_version(project_root)
+    appimage_name = f"TrenchKit-{version}-x86_64.AppImage"
+    zip_name      = f"TrenchKit-{version}-linux-x86_64.zip"
+    appimage_path = dist_dir / appimage_name
+    zip_path      = dist_dir / zip_name
 
-    if archive_path.exists():
-        archive_path.unlink()
+    for p in (appimage_path, zip_path):
+        if p.exists():
+            p.unlink()
 
     print(f"\n==> Building TrenchKit {version} ...\n")
     run([
@@ -213,10 +224,12 @@ def main() -> int:
         "-v", f"{project_root}:/src:ro",
         "-v", f"{dist_dir}:/dist",
         IMAGE_TAG,
-        "bash", "-c", build_package_script(qt_dir, version, archive_name),
+        "bash", "-c", build_package_script(qt_dir, version, appimage_name, zip_name),
     ])
 
-    print(f"\nPackaged release: {archive_path}")
+    print(f"\nPackaged releases:")
+    print(f"  {appimage_path}")
+    print(f"  {zip_path}")
     return 0
 
 

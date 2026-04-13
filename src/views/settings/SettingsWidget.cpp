@@ -75,7 +75,11 @@ void SettingsWidget::retranslateUi() {
     }
     if (m_autoCheckLabel) m_autoCheckLabel->setText(tr("Check for updates on startup"));
     if (m_downloadLabel) m_downloadLabel->setText(tr("Download location (optional)"));
-    if (m_downloadDirEdit) m_downloadDirEdit->setPlaceholderText(tr("Default: AppData/Local/TrenchKit/updates"));
+    if (m_downloadDirEdit) m_downloadDirEdit->setPlaceholderText(
+        tr("Default: %1").arg(
+            QDir::toNativeSeparators(
+                QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                    .filePath(QStringLiteral("updates")))));
     if (m_downloadBrowseButton) m_downloadBrowseButton->setText(tr("Browse..."));
     if (m_checkLabel) m_checkLabel->setText(tr("Check for updates now"));
     if (m_checkNowButton) m_checkNowButton->setText(tr("Check now"));
@@ -835,7 +839,8 @@ bool SettingsWidget::createShortcut(const QString &shortcutPath, const QString &
         QStringLiteral("[Desktop Entry]\nVersion=1.0\nType=Application\n"
                        "Name=TrenchKit\nComment=") + description +
         QStringLiteral("\nExec=\"") + targetPath +
-        QStringLiteral("\"\nTerminal=false\nCategories=Game;\n");
+        QStringLiteral("\"\nIcon=io.github.tapawingo.trenchkit\n"
+                       "Terminal=false\nCategories=Game;\n");
     QFile f(shortcutPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
         return false;
@@ -881,7 +886,10 @@ void SettingsWidget::onAddDesktopShortcutClicked() {
     const QString desktopPath =
         QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)
         + QStringLiteral("/TrenchKit.desktop");
-    const QString exePath = QCoreApplication::applicationFilePath();
+    const QString appImagePath0 = qEnvironmentVariable("APPIMAGE");
+    const QString exePath = appImagePath0.isEmpty()
+        ? QCoreApplication::applicationFilePath()
+        : appImagePath0;
     if (QFile::exists(desktopPath)) {
         if (m_modalManager)
             MessageModal::information(m_modalManager, tr("Shortcut Already Exists"),
@@ -938,7 +946,10 @@ void SettingsWidget::onAddStartMenuShortcutClicked() {
         QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
     QDir().mkpath(appsPath);
     const QString shortcutPath = appsPath + QStringLiteral("/TrenchKit.desktop");
-    const QString exePath = QCoreApplication::applicationFilePath();
+    const QString appImagePath1 = qEnvironmentVariable("APPIMAGE");
+    const QString exePath = appImagePath1.isEmpty()
+        ? QCoreApplication::applicationFilePath()
+        : appImagePath1;
     if (QFile::exists(shortcutPath)) {
         if (m_modalManager)
             MessageModal::information(m_modalManager, tr("Shortcut Already Exists"),
@@ -994,7 +1005,8 @@ bool SettingsWidget::isTkprofileAssociationSet() const {
     return progId == QStringLiteral("TrenchKit.Profile");
 #elif defined(Q_OS_LINUX)
     return QFileInfo(
-        QDir::homePath() + "/.local/share/mime/packages/application-x-tkprofile.xml"
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+        + "/mime/packages/application-x-tkprofile.xml"
     ).exists();
 #else
     return false;
@@ -1029,7 +1041,9 @@ bool SettingsWidget::registerTkprofileAssociation() {
     return classes.status() == QSettings::NoError;
 #elif defined(Q_OS_LINUX)
     // 1. Write MIME type XML
-    const QString mimeDir = QDir::homePath() + "/.local/share/mime/packages";
+    const QString mimeDir =
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+        + "/mime/packages";
     if (!QDir().mkpath(mimeDir))
         return false;
     const QString mimeXml = mimeDir + "/application-x-tkprofile.xml";
@@ -1045,19 +1059,24 @@ bool SettingsWidget::registerTkprofileAssociation() {
             "</mime-info>\n");
     f.close();
     QProcess::execute(QStringLiteral("update-mime-database"),
-                      { QDir::homePath() + "/.local/share/mime" });
+                      { QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+                        + "/mime" });
 
     // 2. Create/update .desktop file with MimeType
     const QString appsDir =
         QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
     QDir().mkpath(appsDir);
     const QString desktopPath = appsDir + "/TrenchKit.desktop";
-    const QString exePath = QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+    const QString appImagePath = qEnvironmentVariable("APPIMAGE");
+    const QString exePath = appImagePath.isEmpty()
+        ? QCoreApplication::applicationFilePath()
+        : appImagePath;
     const QString desktop =
         QStringLiteral("[Desktop Entry]\nVersion=1.0\nType=Application\n"
                        "Name=TrenchKit\n"
                        "Comment=TrenchKit - Foxhole Mod Manager\n"
                        "Exec=\"") + exePath + QStringLiteral("\" \"%f\"\n"
+                       "Icon=io.github.tapawingo.trenchkit\n"
                        "Terminal=false\nCategories=Game;\n"
                        "MimeType=application/x-tkprofile;\n");
     QFile df(desktopPath);
