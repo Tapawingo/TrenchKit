@@ -49,7 +49,8 @@ QString FoxholeDetector::detectInstallPath() {
         }
     }
 
-    // Check common installation paths
+#ifdef Q_OS_WIN
+    // Check common installation paths (Windows drive letters only)
     QStringList commonPaths = {
         "C:/Program Files (x86)/Steam/steamapps/common/Foxhole",
         "C:/Program Files/Steam/steamapps/common/Foxhole",
@@ -69,6 +70,7 @@ QString FoxholeDetector::detectInstallPath() {
             return foxholePath;
         }
     }
+#endif
 
     qDebug() << "Foxhole installation not found";
     return QString(); // Not found
@@ -141,14 +143,14 @@ QString FoxholeDetector::checkPath(const QString &basePath) {
 
     qDebug() << "  Checking path:" << dir.absolutePath();
 
-    // List of possible Foxhole executables to check
+#ifdef Q_OS_WIN
+    // Check for Windows executables
     QStringList possibleExes = {
         "Foxhole.exe",
         "FoxholeClient.exe",
         "FoxholeClient-Win64-Shipping.exe"
     };
 
-    // Check for executable in root directory
     for (const QString &exe : possibleExes) {
         QString exePath = dir.filePath(exe);
         if (QFile::exists(exePath)) {
@@ -157,7 +159,6 @@ QString FoxholeDetector::checkPath(const QString &basePath) {
         }
     }
 
-    // Check for Foxhole executable in War/Binaries/Win64/ subdirectory
     QDir warDir = dir;
     if (warDir.cd("War") && warDir.cd("Binaries") && warDir.cd("Win64")) {
         qDebug() << "    Checking War/Binaries/Win64/";
@@ -169,6 +170,7 @@ QString FoxholeDetector::checkPath(const QString &basePath) {
             }
         }
     }
+#endif
 
     // Also check for other Foxhole-specific files/folders
     QStringList indicators = {

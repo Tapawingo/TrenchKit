@@ -9,7 +9,9 @@
 #include <windows.h>
 #include <shlobj.h>
 #else
+#include <cerrno>
 #include <unistd.h>
+#include <signal.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -20,6 +22,11 @@ struct InstallArgs {
     fs::path newDir;
     fs::path updatesDir;
     std::wstring exeName;
+    // AppImage mode (Linux)
+    fs::path appImagePath;  ///< Path to the current AppImage file
+    fs::path newFilePath;   ///< Path to the new AppImage to install
+    // Cross-platform
+    int waitPid = 0;        ///< PID of main app to wait for before installing
 };
 
 static fs::path g_updatesDir;
@@ -88,27 +95,49 @@ static bool parseArgs(int argc, char **argv, InstallArgs &out) {
         } else if (arg == "--exe-name" && i + 1 < argc) {
             const std::string exe = argv[++i];
             out.exeName = std::wstring(exe.begin(), exe.end());
+        } else if (arg == "--appimage-path" && i + 1 < argc) {
+            out.appImagePath = fs::path(argv[++i]);
+        } else if (arg == "--new-file" && i + 1 < argc) {
+            out.newFilePath = fs::path(argv[++i]);
+        } else if (arg == "--pid" && i + 1 < argc) {
+            try { out.waitPid = std::stoi(argv[++i]); } catch (...) {}
         }
     }
-    return out.install && !out.appDir.empty() && !out.newDir.empty() && !out.exeName.empty();
+    const bool directoryMode = out.install && !out.appDir.empty()
+                                && !out.newDir.empty() && !out.exeName.empty();
+    const bool appImageMode  = out.install && !out.appImagePath.empty()
+                                && !out.newFilePath.empty();
+    return directoryMode || appImageMode;
 }
 
 #if defined(_WIN32)
-static void waitForAppExit(const fs::path &appDir) {
+static void waitForAppExit(const fs::path &appDir, int /*pid*/) {
     // Try to open the mutex created by the main app
-    // This blocks until the main app releases it (exits)
     HANDLE hMutex = OpenMutexW(SYNCHRONIZE, FALSE, L"Global\\TrenchKitRunning");
     if (hMutex) {
         appendLog(appDir, "Waiting for mutex release (app exit)...");
-        WaitForSingleObject(hMutex, 30000);  // 30 second timeout
+        WaitForSingleObject(hMutex, 30000);
         CloseHandle(hMutex);
         appendLog(appDir, "Mutex released, app has exited.");
     } else {
-        // Mutex doesn't exist = app already exited, or running old version without mutex
         appendLog(appDir, "Mutex not found, assuming app already exited.");
     }
-    // Brief delay for file handles to close
     Sleep(500);
+}
+#else
+static void waitForAppExit(const fs::path &logDir, int pid) {
+    if (pid > 0) {
+        appendLog(logDir, "Waiting for PID " + std::to_string(pid) + " to exit...");
+        for (int i = 0; i < 30; ++i) {
+            if (kill(static_cast<pid_t>(pid), 0) != 0 && errno == ESRCH)
+                break;
+            sleep(1);
+        }
+        appendLog(logDir, "Process exited (or timed out).");
+    } else {
+        appendLog(logDir, "No PID provided, waiting briefly...");
+        sleep(1);
+    }
 }
 #endif
 
@@ -238,8 +267,11 @@ static bool launchApp(const fs::path &appDir, const std::wstring &exeName) {
 int main(int argc, char **argv) {
     InstallArgs args;
     if (!parseArgs(argc, argv, args)) {
-        std::cerr << "Usage: TrenchKitUpdater --install --app-dir <dir> --new-dir <dir> "
-                     "--exe-name <name> [--updates-dir <dir>]\n";
+        std::cerr << "Usage:\n"
+                  << "  Directory mode: TrenchKitUpdater --install --app-dir <dir> --new-dir <dir> "
+                     "--exe-name <name> [--updates-dir <dir>] [--pid <pid>]\n"
+                  << "  AppImage mode:  TrenchKitUpdater --install --appimage-path <file> "
+                     "--new-file <file> [--updates-dir <dir>] [--pid <pid>]\n";
         return 1;
     }
     const fs::path helperName = helperExecutableName(argv[0]);
@@ -247,31 +279,81 @@ int main(int argc, char **argv) {
     if (!args.updatesDir.empty()) {
         g_updatesDir = args.updatesDir;
     }
-    appendLog(args.appDir, "Updater started.");
-    appendLog(args.appDir, "App dir: " + args.appDir.string());
-    appendLog(args.appDir, "New dir: " + args.newDir.string());
-    appendLog(args.appDir, "Exe name: " + std::string(args.exeName.begin(), args.exeName.end()));
+
+    // Determine a path to use for logging
+    const fs::path logDir = !args.appDir.empty() ? args.appDir
+                          : !args.appImagePath.empty() ? args.appImagePath.parent_path()
+                          : fs::path(".");
+
+    appendLog(logDir, "Updater started.");
+
+#if !defined(_WIN32)
+    // ── AppImage mode (Linux) ────────────────────────────────────────────────
+    if (!args.appImagePath.empty()) {
+        appendLog(logDir, "Mode: AppImage");
+        appendLog(logDir, "Current AppImage: " + args.appImagePath.string());
+        appendLog(logDir, "New AppImage:     " + args.newFilePath.string());
+
+        waitForAppExit(logDir, args.waitPid);
+
+        if (!fs::exists(args.newFilePath)) {
+            logAndStderr(logDir, "New AppImage not found: " + args.newFilePath.string());
+            return 1;
+        }
+
+        std::error_code ec;
+        // Prefer atomic rename (works when src and dst are on the same filesystem)
+        fs::rename(args.newFilePath, args.appImagePath, ec);
+        if (ec) {
+            appendLog(logDir, "rename failed (" + ec.message() + "), falling back to copy.");
+            ec.clear();
+            fs::copy_file(args.newFilePath, args.appImagePath,
+                          fs::copy_options::overwrite_existing, ec);
+            if (ec) {
+                logAndStderr(logDir, "Failed to replace AppImage: " + ec.message());
+                return 1;
+            }
+            fs::remove(args.newFilePath, ec);
+        }
+
+        // Ensure executable bit is set
+        fs::permissions(args.appImagePath,
+            fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
+            fs::perm_options::add, ec);
+
+        appendLog(logDir, "Update applied. Relaunching: " + args.appImagePath.string());
+        execl(args.appImagePath.c_str(), args.appImagePath.filename().c_str(), nullptr);
+        logAndStderr(logDir, "execl failed — please relaunch manually.");
+        return 1;
+    }
+#endif
+
+    // ── Directory mode ───────────────────────────────────────────────────────
+    appendLog(logDir, "Mode: directory");
+    appendLog(logDir, "App dir: " + args.appDir.string());
+    appendLog(logDir, "New dir: " + args.newDir.string());
+    appendLog(logDir, "Exe name: " + std::string(args.exeName.begin(), args.exeName.end()));
 
 #if defined(_WIN32)
-    waitForAppExit(args.appDir);
+    waitForAppExit(args.appDir, args.waitPid);
 #else
-    // On non-Windows, just wait briefly for the app to exit
-    // The app should have already quit before launching the updater
-    appendLog(args.appDir, "Waiting briefly for app to release files...");
-    sleep(1);
+    waitForAppExit(logDir, args.waitPid);
 #endif
 
     if (!fs::exists(args.newDir)) {
-        logAndStderr(args.appDir, "New version directory not found.");
+        logAndStderr(logDir, "New version directory not found.");
 #if defined(_WIN32)
         showErrorDialog(L"Update failed: new version directory not found.");
 #endif
         return 1;
     }
 
-    appendLog(args.appDir, "Copying new version files.");
+    appendLog(logDir, "Removing old app files.");
+    removeOldAppFiles(args.appDir, helperName);
+
+    appendLog(logDir, "Copying new version files.");
     if (!copyRecursive(args.newDir, args.appDir, helperName)) {
-        logAndStderr(args.appDir, "Failed to copy new version files.");
+        logAndStderr(logDir, "Failed to copy new version files.");
 #if defined(_WIN32)
         showErrorDialog(L"Update failed while copying new version files.");
 #endif
@@ -281,27 +363,36 @@ int main(int argc, char **argv) {
 #if defined(_WIN32)
     if (!launchApp(args.appDir, args.exeName)) {
         const fs::path exePath = args.appDir / args.exeName;
-        logAndStderr(args.appDir, "Failed to relaunch application.");
+        logAndStderr(logDir, "Failed to relaunch application.");
         const std::wstring message = L"Update applied, but TrenchKit failed to relaunch.\n"
                                      L"Please start it manually from:\n" + exePath.wstring();
         showErrorDialog(message);
         return 1;
     }
 #else
-    // Relaunch on non-Windows using fork + exec
     const fs::path exePath = args.appDir / std::string(args.exeName.begin(), args.exeName.end());
-    appendLog(args.appDir, "Relaunching application: " + exePath.string());
+
+    // fs::copy_file does not preserve execute bits — set them explicitly.
+    {
+        std::error_code permEc;
+        fs::permissions(exePath,
+            fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
+            fs::perm_options::add, permEc);
+        if (permEc) {
+            logAndStderr(logDir, "Warning: failed to set executable permissions: " + permEc.message());
+        }
+    }
+
+    appendLog(logDir, "Relaunching application: " + exePath.string());
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process - exec the app
         execl(exePath.c_str(), exePath.filename().c_str(), nullptr);
-        // If execl returns, it failed
         _exit(1);
     } else if (pid < 0) {
-        logAndStderr(args.appDir, "Failed to fork for relaunch.");
+        logAndStderr(logDir, "Failed to fork for relaunch.");
     }
 #endif
 
-    appendLog(args.appDir, "Update completed successfully.");
+    appendLog(logDir, "Update completed successfully.");
     return 0;
 }

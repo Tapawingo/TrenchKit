@@ -167,7 +167,7 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
             continue;
         }
 
-        QString fileName = QString::fromUtf8(entryName);
+        QString fileName = QString::fromUtf8(entryName).replace(u'\\', u'/');
         entryCount++;
         qDebug() << "ArchiveExtractor: Entry" << entryCount << ":" << fileName;
 
@@ -274,7 +274,7 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithZip(const QString &
         }
 
         const char *entryName = zip_entry_name(zip);
-        QString fileName = QString::fromUtf8(entryName);
+        QString fileName = QString::fromUtf8(entryName).replace(u'\\', u'/');
 
         if (isPakFile(fileName)) {
             QString baseName = QFileInfo(fileName).fileName();

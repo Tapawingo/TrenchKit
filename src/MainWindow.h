@@ -57,6 +57,10 @@ protected:
     void changeEvent(QEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+#ifndef Q_OS_WIN
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+#endif
 
 private slots:
     void onMinimizeClicked();

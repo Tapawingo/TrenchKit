@@ -55,7 +55,7 @@ void ConflictDetailModalContent::setupUi() {
         "    color: %1;"
         "    border: 1px solid #404040;"
         "    font-size: 12px;"
-        "    font-family: 'Consolas', 'Courier New', monospace;"
+        "    font-family: 'Consolas', 'DejaVu Sans Mono', 'Liberation Mono', 'Courier New', monospace;"
         "}"
         "QListWidget::item {"
         "    padding: 4px;"

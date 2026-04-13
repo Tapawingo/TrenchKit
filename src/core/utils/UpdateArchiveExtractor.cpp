@@ -62,8 +62,13 @@ bool UpdateArchiveExtractor::extractWithLibarchive(const QString &archivePath,
             continue;
         }
 
-        const QString entryPath = QString::fromUtf8(entryName);
-        const QString outputPath = QDir(destDir).filePath(entryPath);
+        const QString entryPath = QString::fromUtf8(entryName).replace(u'\\', u'/');
+        const QString cleanPath = QDir::cleanPath(entryPath);
+        if (cleanPath.startsWith(QLatin1String("..")) || QDir::isAbsolutePath(cleanPath)) {
+            archive_read_data_skip(a);
+            continue;
+        }
+        const QString outputPath = QDir(destDir).filePath(cleanPath);
 
         if (archive_entry_filetype(entry) == AE_IFDIR) {
             dir.mkpath(outputPath);
@@ -174,8 +179,13 @@ bool UpdateArchiveExtractor::extractWithZip(const QString &zipPath,
             continue;
         }
 
-        const QString entryPath = QString::fromUtf8(entryName);
-        const QString outputPath = QDir(destDir).filePath(entryPath);
+        const QString entryPath = QString::fromUtf8(entryName).replace(u'\\', u'/');
+        const QString cleanPath = QDir::cleanPath(entryPath);
+        if (cleanPath.startsWith(QLatin1String("..")) || QDir::isAbsolutePath(cleanPath)) {
+            zip_entry_close(zip);
+            continue;
+        }
+        const QString outputPath = QDir(destDir).filePath(cleanPath);
 
         if (zip_entry_isdir(zip)) {
             dir.mkpath(outputPath);
