@@ -135,6 +135,10 @@ exec "$HERE/usr/bin/TrenchKit" "$@"
 RUNEOF
         chmod +x "$APPDIR/trenchkit.sh"
 
+        echo "==> Setting AppImage icon..."
+        cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png" \
+           "$APPDIR/.DirIcon"
+
         echo "==> Building AppImage..."
         VERSION="{version}" ARCH=x86_64 /qt/tools/appimagetool "$APPDIR" "/dist/{appimage_name}"
 
@@ -209,7 +213,7 @@ def main() -> int:
     # ── 5. Build + package ───────────────────────────────────────────────────
     version       = read_version(project_root)
     appimage_name = f"TrenchKit-{version}-x86_64.AppImage"
-    zip_name      = f"TrenchKit-{version}-linux-x86_64.zip"
+    zip_name      = f"linux-{version}.zip"
     appimage_path = dist_dir / appimage_name
     zip_path      = dist_dir / zip_name
 
