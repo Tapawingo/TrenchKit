@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <chrono>
+#include <ctime>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -12,6 +14,7 @@
 #include <cerrno>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/wait.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -31,6 +34,82 @@ struct InstallArgs {
 
 static fs::path g_updatesDir;
 
+// ── Logging ─────────────────────────────────────────────────────────────────
+
+enum class LogLevel { Info, Warn, Error };
+
+static const char *levelTag(LogLevel l) {
+    switch (l) {
+        case LogLevel::Warn:  return "WARN ";
+        case LogLevel::Error: return "ERROR";
+        default:              return "INFO ";
+    }
+}
+
+static std::string logTimestamp() {
+    const auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    char buf[20];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
+    return buf;
+}
+
+static void appendLog(const fs::path &appDir, const std::string &message,
+                      LogLevel level = LogLevel::Info) {
+    std::error_code ec;
+    fs::path updatesDir = g_updatesDir.empty() ? (appDir / "updates") : g_updatesDir;
+    fs::create_directories(updatesDir, ec);
+    const fs::path logPath = updatesDir / "updater.log";
+    std::ofstream logFile(logPath, std::ios::app);
+    if (logFile.is_open()) {
+        logFile << "[" << logTimestamp() << "] [" << levelTag(level) << "] " << message << "\n";
+    }
+}
+
+static void logAndStderr(const fs::path &appDir, const std::string &message,
+                         LogLevel level = LogLevel::Error) {
+    appendLog(appDir, message, level);
+    std::cerr << "[" << levelTag(level) << "] " << message << "\n";
+}
+
+// ── Error dialogs ────────────────────────────────────────────────────────────
+
+#if defined(_WIN32)
+static void showErrorDialog(const fs::path & /*logPath*/, const std::wstring &message) {
+    MessageBoxW(nullptr, message.c_str(), L"TrenchKit Updater", MB_OK | MB_ICONERROR);
+}
+#else
+/// Tries zenity, kdialog, or xmessage to show a modal error to the user.
+/// Falls back silently if none are available (logAndStderr already wrote to stderr).
+static void showErrorDialog(const fs::path &logPath, const std::string &message) {
+    const std::string full = message + "\n\nSee log for details:\n" + logPath.string();
+
+    struct Tool { const char *exe; std::vector<const char *> args; };
+    // Build argv lists; placeholders replaced below
+    const std::string zenityText  = "--text=" + full;
+    const std::string kdialogText = full;
+    const Tool tools[] = {
+        {"zenity",   {"zenity",   "--error", "--title=TrenchKit Updater", zenityText.c_str(),  nullptr}},
+        {"kdialog",  {"kdialog",  "--error", kdialogText.c_str(), "--title", "TrenchKit Updater", nullptr}},
+        {"xmessage", {"xmessage", "-center", full.c_str(), nullptr}},
+    };
+
+    for (const auto &tool : tools) {
+        pid_t p = fork();
+        if (p == 0) {
+            execvp(tool.exe, const_cast<char *const *>(tool.args.data()));
+            _exit(127);
+        } else if (p > 0) {
+            int status = 0;
+            waitpid(p, &status, 0);
+            // execvp returns 127 when the binary isn't found; 0 means the dialog was shown
+            if (WIFEXITED(status) && WEXITSTATUS(status) != 127) return;
+        }
+    }
+}
+#endif
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 static fs::path helperExecutableName(const char *argv0) {
     if (argv0 && *argv0) {
         return fs::path(argv0).filename();
@@ -41,28 +120,6 @@ static fs::path helperExecutableName(const char *argv0) {
     return fs::path("TrenchKitUpdater");
 #endif
 }
-
-static void appendLog(const fs::path &appDir, const std::string &message) {
-    std::error_code ec;
-    fs::path updatesDir = g_updatesDir.empty() ? (appDir / "updates") : g_updatesDir;
-    fs::create_directories(updatesDir, ec);
-    const fs::path logPath = updatesDir / "updater.log";
-    std::ofstream logFile(logPath, std::ios::app);
-    if (logFile.is_open()) {
-        logFile << message << "\n";
-    }
-}
-
-static void logAndStderr(const fs::path &appDir, const std::string &message) {
-    appendLog(appDir, message);
-    std::cerr << message << "\n";
-}
-
-#if defined(_WIN32)
-static void showErrorDialog(const std::wstring &message) {
-    MessageBoxW(nullptr, message.c_str(), L"TrenchKit Updater", MB_OK | MB_ICONERROR);
-}
-#endif
 
 static bool equalsIgnoreCase(const std::wstring &a, const std::wstring &b) {
 #if defined(_WIN32)
@@ -112,13 +169,15 @@ static bool parseArgs(int argc, char **argv, InstallArgs &out) {
 
 #if defined(_WIN32)
 static void waitForAppExit(const fs::path &appDir, int /*pid*/) {
-    // Try to open the mutex created by the main app
     HANDLE hMutex = OpenMutexW(SYNCHRONIZE, FALSE, L"Global\\TrenchKitRunning");
     if (hMutex) {
         appendLog(appDir, "Waiting for mutex release (app exit)...");
-        WaitForSingleObject(hMutex, 30000);
+        const DWORD result = WaitForSingleObject(hMutex, 30000);
         CloseHandle(hMutex);
-        appendLog(appDir, "Mutex released, app has exited.");
+        if (result == WAIT_TIMEOUT)
+            appendLog(appDir, "Timed out waiting for app mutex (30s). Proceeding anyway.", LogLevel::Warn);
+        else
+            appendLog(appDir, "Mutex released — app has exited.");
     } else {
         appendLog(appDir, "Mutex not found, assuming app already exited.");
     }
@@ -128,12 +187,21 @@ static void waitForAppExit(const fs::path &appDir, int /*pid*/) {
 static void waitForAppExit(const fs::path &logDir, int pid) {
     if (pid > 0) {
         appendLog(logDir, "Waiting for PID " + std::to_string(pid) + " to exit...");
-        for (int i = 0; i < 30; ++i) {
-            if (kill(static_cast<pid_t>(pid), 0) != 0 && errno == ESRCH)
+        int elapsed = 0;
+        bool timedOut = true;
+        for (; elapsed < 30; ++elapsed) {
+            if (kill(static_cast<pid_t>(pid), 0) != 0 && errno == ESRCH) {
+                timedOut = false;
                 break;
+            }
             sleep(1);
         }
-        appendLog(logDir, "Process exited (or timed out).");
+        if (timedOut)
+            appendLog(logDir, "Timed out waiting for PID " + std::to_string(pid)
+                      + " after 30s. Proceeding anyway.", LogLevel::Warn);
+        else
+            appendLog(logDir, "PID " + std::to_string(pid) + " exited after "
+                      + std::to_string(elapsed) + "s.");
     } else {
         appendLog(logDir, "No PID provided, waiting briefly...");
         sleep(1);
@@ -153,14 +221,14 @@ static bool copyRecursive(const fs::path &from, const fs::path &to, const fs::pa
     std::error_code ec;
     fs::create_directories(to, ec);
     if (ec) {
-        appendLog(to, "Failed to create target directory: " + ec.message());
+        appendLog(to, "Failed to create target directory: " + ec.message(), LogLevel::Error);
         return false;
     }
 
     for (const auto &entry : fs::recursive_directory_iterator(from)) {
         const auto relPath = fs::relative(entry.path(), from, ec);
         if (ec) {
-            appendLog(to, "Failed to resolve relative path: " + ec.message());
+            appendLog(to, "Failed to resolve relative path: " + ec.message(), LogLevel::Error);
             return false;
         }
         const fs::path name = relPath.filename();
@@ -171,7 +239,8 @@ static bool copyRecursive(const fs::path &from, const fs::path &to, const fs::pa
         if (entry.is_directory()) {
             fs::create_directories(destPath, ec);
             if (ec) {
-                appendLog(to, "Failed to create directory " + destPath.string() + ": " + ec.message());
+                appendLog(to, "Failed to create directory " + destPath.string() + ": " + ec.message(),
+                          LogLevel::Error);
                 return false;
             }
             continue;
@@ -180,7 +249,7 @@ static bool copyRecursive(const fs::path &from, const fs::path &to, const fs::pa
             fs::create_directories(destPath.parent_path(), ec);
             if (ec) {
                 appendLog(to, "Failed to create parent directory " + destPath.parent_path().string()
-                               + ": " + ec.message());
+                               + ": " + ec.message(), LogLevel::Error);
                 return false;
             }
 #if defined(_WIN32)
@@ -201,7 +270,7 @@ static bool copyRecursive(const fs::path &from, const fs::path &to, const fs::pa
                     }
                 }
                 if (ec.value() == static_cast<int>(std::errc::permission_denied)) {
-                    appendLog(to, "Skipping locked file: " + destPath.string());
+                    appendLog(to, "Skipping locked file: " + destPath.string(), LogLevel::Warn);
                     ec.clear();
                     continue;
                 }
@@ -210,13 +279,13 @@ static bool copyRecursive(const fs::path &from, const fs::path &to, const fs::pa
 #if defined(_WIN32)
                     if (shouldSkipCopy(name)) {
                         appendLog(to, "Skipping copy failure for runtime file " + destPath.string()
-                                       + ": " + ec.message());
+                                       + ": " + ec.message(), LogLevel::Warn);
                         ec.clear();
                         continue;
                     }
 #endif
                     appendLog(to, "Failed to copy " + entry.path().string() + " to "
-                                   + destPath.string() + ": " + ec.message());
+                                   + destPath.string() + ": " + ec.message(), LogLevel::Error);
                     return false;
                 }
             }
@@ -245,7 +314,8 @@ static void removeOldAppFiles(const fs::path &appDir, const fs::path &helperName
 #endif
         fs::remove_all(entry.path(), ec);
         if (ec) {
-            appendLog(appDir, "Failed to remove " + entry.path().string() + ": " + ec.message());
+            appendLog(appDir, "Failed to remove " + entry.path().string() + ": " + ec.message(),
+                      LogLevel::Warn);
         }
     }
 }
@@ -285,7 +355,21 @@ int main(int argc, char **argv) {
                           : !args.appImagePath.empty() ? args.appImagePath.parent_path()
                           : fs::path(".");
 
+    // Resolve the log file path so we can include it in error dialogs
+    const fs::path resolvedLog = (g_updatesDir.empty() ? (logDir / "updates") : g_updatesDir) / "updater.log";
+
     appendLog(logDir, "Updater started.");
+    appendLog(logDir, "Log file: " + resolvedLog.string());
+
+    // Log all arguments for diagnostics
+    if (!args.appDir.empty())       appendLog(logDir, "  --app-dir       " + args.appDir.string());
+    if (!args.newDir.empty())       appendLog(logDir, "  --new-dir       " + args.newDir.string());
+    if (!args.updatesDir.empty())   appendLog(logDir, "  --updates-dir   " + args.updatesDir.string());
+    if (!args.exeName.empty())      appendLog(logDir, "  --exe-name      "
+                                              + std::string(args.exeName.begin(), args.exeName.end()));
+    if (!args.appImagePath.empty()) appendLog(logDir, "  --appimage-path " + args.appImagePath.string());
+    if (!args.newFilePath.empty())  appendLog(logDir, "  --new-file      " + args.newFilePath.string());
+    if (args.waitPid > 0)           appendLog(logDir, "  --pid           " + std::to_string(args.waitPid));
 
 #if !defined(_WIN32)
     // ── AppImage mode (Linux) ────────────────────────────────────────────────
@@ -298,6 +382,7 @@ int main(int argc, char **argv) {
 
         if (!fs::exists(args.newFilePath)) {
             logAndStderr(logDir, "New AppImage not found: " + args.newFilePath.string());
+            showErrorDialog(resolvedLog, "Update failed: new AppImage not found at:\n" + args.newFilePath.string());
             return 1;
         }
 
@@ -311,6 +396,7 @@ int main(int argc, char **argv) {
                           fs::copy_options::overwrite_existing, ec);
             if (ec) {
                 logAndStderr(logDir, "Failed to replace AppImage: " + ec.message());
+                showErrorDialog(resolvedLog, "Update failed: could not replace the AppImage.\n" + ec.message());
                 return 1;
             }
             fs::remove(args.newFilePath, ec);
@@ -320,10 +406,15 @@ int main(int argc, char **argv) {
         fs::permissions(args.appImagePath,
             fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
             fs::perm_options::add, ec);
+        if (ec) {
+            appendLog(logDir, "Warning: failed to set AppImage executable permissions: " + ec.message(),
+                      LogLevel::Warn);
+        }
 
         appendLog(logDir, "Update applied. Relaunching: " + args.appImagePath.string());
         execl(args.appImagePath.c_str(), args.appImagePath.filename().c_str(), nullptr);
         logAndStderr(logDir, "execl failed — please relaunch manually.");
+        showErrorDialog(resolvedLog, "Update applied, but TrenchKit failed to relaunch.\nPlease start it manually.");
         return 1;
     }
 #endif
@@ -341,9 +432,11 @@ int main(int argc, char **argv) {
 #endif
 
     if (!fs::exists(args.newDir)) {
-        logAndStderr(logDir, "New version directory not found.");
+        logAndStderr(logDir, "New version directory not found: " + args.newDir.string());
 #if defined(_WIN32)
-        showErrorDialog(L"Update failed: new version directory not found.");
+        showErrorDialog(resolvedLog, L"Update failed: new version directory not found.");
+#else
+        showErrorDialog(resolvedLog, "Update failed: new version directory not found:\n" + args.newDir.string());
 #endif
         return 1;
     }
@@ -355,7 +448,9 @@ int main(int argc, char **argv) {
     if (!copyRecursive(args.newDir, args.appDir, helperName)) {
         logAndStderr(logDir, "Failed to copy new version files.");
 #if defined(_WIN32)
-        showErrorDialog(L"Update failed while copying new version files.");
+        showErrorDialog(resolvedLog, L"Update failed while copying new version files.");
+#else
+        showErrorDialog(resolvedLog, "Update failed while copying new version files.");
 #endif
         return 1;
     }
@@ -366,7 +461,7 @@ int main(int argc, char **argv) {
         logAndStderr(logDir, "Failed to relaunch application.");
         const std::wstring message = L"Update applied, but TrenchKit failed to relaunch.\n"
                                      L"Please start it manually from:\n" + exePath.wstring();
-        showErrorDialog(message);
+        showErrorDialog(resolvedLog, message);
         return 1;
     }
 #else
@@ -379,7 +474,8 @@ int main(int argc, char **argv) {
             fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
             fs::perm_options::add, permEc);
         if (permEc) {
-            logAndStderr(logDir, "Warning: failed to set executable permissions: " + permEc.message());
+            logAndStderr(logDir, "Warning: failed to set executable permissions: " + permEc.message(),
+                         LogLevel::Warn);
         }
     }
 
@@ -391,7 +487,8 @@ int main(int argc, char **argv) {
             fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
             fs::perm_options::add, updPermEc);
         if (updPermEc) {
-            logAndStderr(logDir, "Warning: failed to set updater permissions: " + updPermEc.message());
+            logAndStderr(logDir, "Warning: failed to set updater permissions: " + updPermEc.message(),
+                         LogLevel::Warn);
         }
     }
 
@@ -402,6 +499,8 @@ int main(int argc, char **argv) {
         _exit(1);
     } else if (pid < 0) {
         logAndStderr(logDir, "Failed to fork for relaunch.");
+        showErrorDialog(resolvedLog, "Update applied, but TrenchKit failed to relaunch.\nPlease start it manually.");
+        return 1;
     }
 #endif
 
