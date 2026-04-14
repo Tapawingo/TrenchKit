@@ -383,6 +383,18 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Also restore exec bit on the newly copied updater binary (sibling of the main exe).
+    const fs::path updaterPath = exePath.parent_path() / "TrenchKitUpdater";
+    if (fs::exists(updaterPath)) {
+        std::error_code updPermEc;
+        fs::permissions(updaterPath,
+            fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
+            fs::perm_options::add, updPermEc);
+        if (updPermEc) {
+            logAndStderr(logDir, "Warning: failed to set updater permissions: " + updPermEc.message());
+        }
+    }
+
     appendLog(logDir, "Relaunching application: " + exePath.string());
     pid_t pid = fork();
     if (pid == 0) {
