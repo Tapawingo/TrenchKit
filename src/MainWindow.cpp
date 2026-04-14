@@ -891,6 +891,49 @@ void MainWindow::launchUpdater(const QString &stagingDir, const QString &updates
     }
 #endif
 
+#ifdef Q_OS_LINUX
+    // Portable zip mode: binary lives at <root>/usr/bin/TrenchKit.
+    // Detected by trenchkit.sh existing at the zip root (two levels up from usr/bin/).
+    {
+        const QString binDir  = QCoreApplication::applicationDirPath();
+        const QString zipRoot = QDir(binDir + "/../..").canonicalPath();
+        if (QFile::exists(zipRoot + "/trenchkit.sh")) {
+            // Stage updater to /tmp under a different name so that:
+            //   (a) it survives removeOldAppFiles deleting usr/ from the zip root, and
+            //   (b) helperName becomes "TrenchKitUpdater_update" so copyRecursive does
+            //       NOT skip the new TrenchKitUpdater from the staged zip.
+            const QString tmpUpdater =
+                QDir::tempPath() + QStringLiteral("/TrenchKitUpdater_update");
+            QFile::remove(tmpUpdater);
+            if (!QFile::copy(QDir(binDir).filePath("TrenchKitUpdater"), tmpUpdater)) {
+                MessageModal::warning(m_modalManager, tr("Update Error"),
+                                      tr("Failed to stage updater helper."));
+                return;
+            }
+            QFile::setPermissions(tmpUpdater,
+                QFileDevice::ExeOwner | QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+
+            QStringList args;
+            args << "--install"
+                 << "--app-dir"    << zipRoot
+                 << "--new-dir"    << stagingDir
+                 << "--updates-dir" << updatesDir
+                 << "--exe-name"   << QStringLiteral("usr/bin/TrenchKit")
+                 << "--pid"        << QString::number(QCoreApplication::applicationPid());
+
+            qInfo() << "Updater: launching zip helper" << tmpUpdater;
+            qint64 pid = 0;
+            if (!QProcess::startDetached(tmpUpdater, args, QDir::tempPath(), &pid)) {
+                MessageModal::warning(m_modalManager, tr("Update Error"),
+                                      tr("Failed to launch updater helper."));
+                return;
+            }
+            QCoreApplication::quit();
+            return;
+        }
+    }
+#endif
+
     const QString appDir = QCoreApplication::applicationDirPath();
     const QString exeName = QFileInfo(QCoreApplication::applicationFilePath()).fileName();
 
