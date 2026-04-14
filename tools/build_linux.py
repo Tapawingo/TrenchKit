@@ -97,33 +97,49 @@ def build_package_script(qt_dir: str, version: str, appimage_name: str, zip_name
         cmake --build /build
 
         echo "==> Staging AppDir..."
-        APPDIR=/tmp/AppDir
-        rm -rf "$APPDIR"
-        mkdir -p "$APPDIR/usr/bin" \\
-                 "$APPDIR/usr/share/applications" \\
-                 "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+        # Use TKAPPDIR instead of APPDIR: the AppImage runtime sets $APPDIR to the
+        # linuxdeploy AppImage's own extraction directory, which would shadow our
+        # staging path and cause linuxdeploy's icon lookup to search the wrong tree.
+        TKAPPDIR=/tmp/AppDir
+        rm -rf "$TKAPPDIR"
+        mkdir -p "$TKAPPDIR/usr/bin" \\
+                 "$TKAPPDIR/usr/share/applications" \\
+                 "$TKAPPDIR/usr/share/icons/hicolor/256x256/apps"
+        # Note: usr/share/applications is created here but left empty until after
+        # linuxdeploy runs — see comment below.
 
-        cp /build/src/TrenchKit            "$APPDIR/usr/bin/"
-        cp /build/updater/TrenchKitUpdater "$APPDIR/usr/bin/"
+        cp /build/src/TrenchKit            "$TKAPPDIR/usr/bin/"
+        cp /build/updater/TrenchKitUpdater "$TKAPPDIR/usr/bin/"
 
-        cp /src/extras/linux/io.github.tapawingo.trenchkit.desktop \\
-           "$APPDIR/usr/share/applications/"
         convert /src/extras/logo/logo_transparent.png \\
             -resize 256x256 \\
-            "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
+            "$TKAPPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
 
         echo "==> Running linuxdeploy with Qt plugin..."
         export QMAKE="{qt_dir}/bin/qmake"
+        # Do NOT stage the desktop file before this step: linuxdeploy auto-discovers
+        # any *.desktop in usr/share/applications/ and triggers its broken root-symlink
+        # step even without --desktop-file, always failing with "Could not find suitable
+        # icon".  We add the desktop file and all root entries manually afterward.
         /qt/tools/linuxdeploy \\
-            --appdir "$APPDIR" \\
+            --appdir "$TKAPPDIR" \\
             --plugin qt \\
-            --executable "$APPDIR/usr/bin/TrenchKit" \\
-            --executable "$APPDIR/usr/bin/TrenchKitUpdater" \\
-            --desktop-file "$APPDIR/usr/share/applications/io.github.tapawingo.trenchkit.desktop" \\
-            --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
+            --executable "$TKAPPDIR/usr/bin/TrenchKit" \\
+            --executable "$TKAPPDIR/usr/bin/TrenchKitUpdater"
+
+        echo "==> Staging AppDir root entries..."
+        # AppImage spec: the AppDir root must contain a .desktop and icon named after
+        # the app; appimagetool reads these when building the image.
+        # Strip any Windows CR characters the source file might carry after a Windows checkout.
+        tr -d '\\r' < /src/extras/linux/io.github.tapawingo.trenchkit.desktop \\
+           > "$TKAPPDIR/usr/share/applications/io.github.tapawingo.trenchkit.desktop"
+        cp "$TKAPPDIR/usr/share/applications/io.github.tapawingo.trenchkit.desktop" \\
+           "$TKAPPDIR/io.github.tapawingo.trenchkit.desktop"
+        cp "$TKAPPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png" \\
+           "$TKAPPDIR/io.github.tapawingo.trenchkit.png"
 
         echo "==> Adding run.sh launcher for zip distribution..."
-        cat > "$APPDIR/trenchkit.sh" << 'RUNEOF'
+        cat > "$TKAPPDIR/trenchkit.sh" << 'RUNEOF'
 #!/bin/sh
 # Launcher for the portable zip distribution of TrenchKit.
 # Sets LD_LIBRARY_PATH so the bundled Qt and XCB libs are used instead of
@@ -133,17 +149,17 @@ export LD_LIBRARY_PATH="$HERE/usr/lib:${{LD_LIBRARY_PATH:-}}"
 export QT_PLUGIN_PATH="$HERE/usr/plugins"
 exec "$HERE/usr/bin/TrenchKit" "$@"
 RUNEOF
-        chmod +x "$APPDIR/trenchkit.sh"
+        chmod +x "$TKAPPDIR/trenchkit.sh"
 
         echo "==> Setting AppImage icon..."
-        cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png" \
-           "$APPDIR/.DirIcon"
+        cp "$TKAPPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png" \
+           "$TKAPPDIR/.DirIcon"
 
         echo "==> Building AppImage..."
-        VERSION="{version}" ARCH=x86_64 /qt/tools/appimagetool "$APPDIR" "/dist/{appimage_name}"
+        VERSION="{version}" ARCH=x86_64 /qt/tools/appimagetool "$TKAPPDIR" "/dist/{appimage_name}"
 
         echo "==> Building zip archive..."
-        (cd "$APPDIR" && zip -r "/dist/{zip_name}" .)
+        (cd "$TKAPPDIR" && zip -r "/dist/{zip_name}" .)
 
         echo "==> Done."
     """)
@@ -212,7 +228,7 @@ def main() -> int:
 
     # ── 5. Build + package ───────────────────────────────────────────────────
     version       = read_version(project_root)
-    appimage_name = f"TrenchKit-{version}-x86_64.AppImage"
+    appimage_name = f"TrenchKit-{version}.AppImage"
     zip_name      = f"linux-{version}.zip"
     appimage_path = dist_dir / appimage_name
     zip_path      = dist_dir / zip_name
