@@ -151,6 +151,16 @@ exec "$HERE/usr/bin/TrenchKit" "$@"
 RUNEOF
         chmod +x "$TKAPPDIR/trenchkit.sh"
 
+        echo "==> Creating AppRun..."
+        cat > "$TKAPPDIR/AppRun" << 'APPRUNEOF'
+#!/bin/sh
+HERE="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$HERE/usr/lib:${{LD_LIBRARY_PATH:-}}"
+export QT_PLUGIN_PATH="$HERE/usr/plugins"
+exec "$HERE/usr/bin/TrenchKit" "$@"
+APPRUNEOF
+        chmod +x "$TKAPPDIR/AppRun"
+
         echo "==> Setting AppImage icon..."
         cp "$TKAPPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png" \
            "$TKAPPDIR/.DirIcon"
