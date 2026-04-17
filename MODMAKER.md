@@ -4,6 +4,7 @@ Hey mod makers! This guide explains how TrenchKit detects and handles mod update
 
 ## Table of Contents
 - [Quick Reference](#quick-reference)
+- [Mod Manifest](#mod-manifest)
 - [Platform-Specific Guides](#platform-specific-guides)
   - [Nexus Mods](#nexus-mods)
   - [Itch.io](#itchio)
