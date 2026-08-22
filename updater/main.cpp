@@ -295,23 +295,44 @@ static bool copyRecursive(const fs::path &from, const fs::path &to, const fs::pa
     return true;
 }
 
-static void removeOldAppFiles(const fs::path &appDir, const fs::path &helperName) {
+static void removeOldAppFiles(const fs::path &appDir, const fs::path &newDir, const fs::path &helperName) {
     std::error_code ec;
+
+    // Only remove entries that are actually part of the new release, so any
+    // file or folder the user added next to the exe (e.g. a locally-tested
+    // `locales/` folder, see src/locales/TRANSLATING.md) survives an update.
+    std::vector<fs::path> newVersionEntries;
+    for (const auto &entry : fs::directory_iterator(newDir, ec)) {
+        newVersionEntries.push_back(entry.path().filename());
+    }
+    auto isShipped = [&](const fs::path &name) {
+        for (const auto &shipped : newVersionEntries) {
+#if defined(_WIN32)
+            if (equalsIgnoreCase(name.wstring(), shipped.wstring())) return true;
+#else
+            if (name == shipped) return true;
+#endif
+        }
+        return false;
+    };
+
     for (const auto &entry : fs::directory_iterator(appDir)) {
         const fs::path name = entry.path().filename();
-#if defined(_WIN32)
-        const std::wstring entryName = name.wstring();
-        if (equalsIgnoreCase(entryName, helperName.wstring())) {
+        if (isHelperExecutable(name, helperName)) {
             continue;
         }
-        if (equalsIgnoreCase(entryName, L"updates")) {
+#if defined(_WIN32)
+        if (equalsIgnoreCase(name.wstring(), L"updates")) {
             continue;
         }
 #else
-        if (name == helperName || name == "updates") {
+        if (name == "updates") {
             continue;
         }
 #endif
+        if (!isShipped(name)) {
+            continue;
+        }
         fs::remove_all(entry.path(), ec);
         if (ec) {
             appendLog(appDir, "Failed to remove " + entry.path().string() + ": " + ec.message(),
@@ -442,7 +463,7 @@ int main(int argc, char **argv) {
     }
 
     appendLog(logDir, "Removing old app files.");
-    removeOldAppFiles(args.appDir, helperName);
+    removeOldAppFiles(args.appDir, args.newDir, helperName);
 
     appendLog(logDir, "Copying new version files.");
     if (!copyRecursive(args.newDir, args.appDir, helperName)) {
