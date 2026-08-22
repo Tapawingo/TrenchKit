@@ -1198,17 +1198,24 @@ void ModListWidget::onUpdateRequested(const QString &modId) {
             connect(modal, &ItchModUpdateModalContent::accepted, this, finalizeItchUpdate);
             m_modalManager->showModal(modal);
         }
-        // If multiple uploads and no matching filename, show file selection modal
-        else if (updateInfo.hasMultipleUploads()) {
+        // No exact filename match: always let the user confirm/select from the
+        // candidates, even if there's only one, so we never silently swap them
+        // onto an unrelated variant of the mod.
+        else {
             QList<FileItem> fileItems;
             for (const ItchUploadInfo &upload : updateInfo.candidateUploads) {
                 fileItems.append({upload.id, upload.filename});
             }
 
+            QString promptText = updateInfo.hasMultipleUploads()
+                ? QString("Multiple update files are available for '%1'. Select one:").arg(mod.name)
+                : QString("An update file is available for '%1' that doesn't match your installed file. "
+                          "Select it to install, or ignore it:").arg(mod.name);
+
             auto *fileModal = new FileSelectionModalContent(
                 fileItems,
                 "Select Update File",
-                QString("Multiple update files are available for '%1'. Select one:").arg(mod.name),
+                promptText,
                 false,
                 true  // Show "Ignore These Updates" button
             );
@@ -1259,12 +1266,6 @@ void ModListWidget::onUpdateRequested(const QString &modId) {
             });
 
             m_modalManager->showModal(fileModal);
-        }
-        // Single upload, proceed directly
-        else {
-            auto *modal = new ItchModUpdateModalContent(mod, updateInfo, m_modManager, m_itchClient, m_modalManager);
-            connect(modal, &ItchModUpdateModalContent::accepted, this, finalizeItchUpdate);
-            m_modalManager->showModal(modal);
         }
     }
 }
