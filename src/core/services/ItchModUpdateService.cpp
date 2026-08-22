@@ -126,22 +126,8 @@ void ItchModUpdateService::onUploadsReceived(const QList<ItchUploadInfo> &upload
     const ModInfo &mod = m_modsToCheck[m_currentModIndex];
     QDateTime currentDate = mod.uploadDate.isValid() ? mod.uploadDate : mod.installDate;
 
-    QList<ItchUploadInfo> candidateUploads;
-    if (!mod.itchUploadId.isEmpty()) {
-        // Only flag an update if the specific installed upload has a newer date
-        for (const ItchUploadInfo &upload : uploads) {
-            if (upload.id == mod.itchUploadId && !mod.ignoredItchUploadIds.contains(upload.id)) {
-                QDateTime uploadDate = upload.updatedAt.isValid() ? upload.updatedAt : upload.createdAt;
-                if (isUpdateAvailable(currentDate, uploadDate)) {
-                    candidateUploads.append(upload);
-                }
-                break;
-            }
-        }
-    } else {
-        // Legacy fallback: mod installed before upload ID tracking
-        candidateUploads = findCandidateUploads(uploads, currentDate, mod.ignoredItchUploadIds);
-    }
+    QList<ItchUploadInfo> candidateUploads =
+        findCandidateUploads(uploads, currentDate, mod.ignoredItchUploadIds);
 
     if (!candidateUploads.isEmpty()) {
         ItchUpdateInfo updateInfo(mod.id, mod.version, currentDate, candidateUploads);

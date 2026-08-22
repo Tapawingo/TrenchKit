@@ -20,9 +20,11 @@ class QPushButton;
 /**
  * @brief Shown when the user requests an update for an itch.io-linked mod.
  *
- * If the @c ItchUpdateInfo has multiple candidate uploads, prompts the user
- * to choose one via @c FileSelectionModalContent before starting the download.
- * Otherwise immediately starts downloading on @c showEvent.
+ * Expects an already-resolved @c ItchUpdateInfo naming a single upload to
+ * install; if multiple candidate uploads exist, the caller
+ * (@c ModListWidget::onUpdateRequested) prompts the user to choose one via
+ * @c FileSelectionModalContent before this modal is constructed. Immediately
+ * starts downloading the resolved upload on @c showEvent.
  */
 class ItchModUpdateModalContent : public BaseModalContent {
     Q_OBJECT
