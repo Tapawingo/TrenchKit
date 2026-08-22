@@ -194,15 +194,31 @@ add_custom_target(update_translation_template
 
 # Post-build: Copy platform-specific TLS backend
 set(QT_TLS_PLUGIN_DIR "${Qt6_DIR}/../../../plugins/tls")
+set(HAVE_TLS_PLUGIN FALSE)
 if(WIN32)
-    set(TLS_PLUGIN "qschannelbackend.dll")
+    if(EXISTS "${QT_TLS_PLUGIN_DIR}/qschannelbackendd.dll")
+        # MSVC-style Qt kits ship separate debug/release plugin builds, same
+        # as the Qt DLLs themselves; pick the variant matching the build config.
+        set(TLS_PLUGIN "$<$<CONFIG:Debug>:qschannelbackendd.dll>$<$<NOT:$<CONFIG:Debug>>:qschannelbackend.dll>")
+        set(HAVE_TLS_PLUGIN TRUE)
+    elseif(EXISTS "${QT_TLS_PLUGIN_DIR}/qschannelbackend.dll")
+        # Single-variant kits (e.g. MinGW) use the same plugin for all configs.
+        set(TLS_PLUGIN "qschannelbackend.dll")
+        set(HAVE_TLS_PLUGIN TRUE)
+    endif()
 elseif(APPLE)
     set(TLS_PLUGIN "libqsecuretransportbackend.dylib")
+    if(EXISTS "${QT_TLS_PLUGIN_DIR}/${TLS_PLUGIN}")
+        set(HAVE_TLS_PLUGIN TRUE)
+    endif()
 else()
     set(TLS_PLUGIN "libqopensslbackend.so")
+    if(EXISTS "${QT_TLS_PLUGIN_DIR}/${TLS_PLUGIN}")
+        set(HAVE_TLS_PLUGIN TRUE)
+    endif()
 endif()
 
-if(EXISTS "${QT_TLS_PLUGIN_DIR}/${TLS_PLUGIN}")
+if(HAVE_TLS_PLUGIN)
     add_custom_command(TARGET TrenchKit POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
             $<TARGET_FILE_DIR:TrenchKit>/tls
@@ -234,28 +250,22 @@ if(WIN32)
         )
     endif()
 
-    # Qt DLLs
-    set(QT_BIN_DIR "${Qt6_DIR}/../../../bin")
-    set(QT_APP_DLLS "")
-    foreach(QT_DLL_NAME
-            Qt6Core.dll
-            Qt6Gui.dll
-            Qt6Widgets.dll
-            Qt6Network.dll
-            Qt6Concurrent.dll
-            Qt6WebSockets.dll)
-        if(EXISTS "${QT_BIN_DIR}/${QT_DLL_NAME}")
-            list(APPEND QT_APP_DLLS "${QT_BIN_DIR}/${QT_DLL_NAME}")
-        endif()
-    endforeach()
-    if(QT_APP_DLLS)
+    # Qt DLLs (copy each target's own imported DLL so the correct debug/release
+    # variant, e.g. Qt6Networkd.dll under MSVC Debug, is always copied)
+    foreach(QT_APP_TARGET
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Widgets
+            Qt6::Network
+            Qt6::Concurrent
+            Qt6::WebSockets)
         add_custom_command(TARGET TrenchKit POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${QT_APP_DLLS}
+                $<TARGET_FILE:${QT_APP_TARGET}>
                 $<TARGET_FILE_DIR:TrenchKit>
-            COMMENT "Copying Qt DLLs to output directory"
+            COMMENT "Copying $<TARGET_FILE_NAME:${QT_APP_TARGET}> to output directory"
         )
-    endif()
+    endforeach()
 
     # MinGW runtime DLLs
     if(MINGW)

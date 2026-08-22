@@ -69,7 +69,7 @@ FetchContent_Declare(
   GIT_TAG v3.7.4
 )
 
-set(ENABLE_TAR ON)
+set(ENABLE_TAR OFF)
 set(ENABLE_CPIO OFF)
 set(ENABLE_CAT OFF)
 set(ENABLE_TEST OFF)

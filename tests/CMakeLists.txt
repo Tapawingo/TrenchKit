@@ -45,25 +45,18 @@ if(WIN32)
     )
   endif()
 
-  set(QT_BIN_DIR "${Qt6_DIR}/../../../bin")
-  set(QT_TEST_DLLS "")
-  foreach(QT_DLL_NAME
-          Qt6Core.dll
-          Qt6Test.dll
-          Qt6Network.dll
-          Qt6Concurrent.dll)
-    if(EXISTS "${QT_BIN_DIR}/${QT_DLL_NAME}")
-      list(APPEND QT_TEST_DLLS "${QT_BIN_DIR}/${QT_DLL_NAME}")
-    endif()
-  endforeach()
-  if(QT_TEST_DLLS)
+  foreach(QT_TEST_TARGET
+          Qt6::Core
+          Qt6::Test
+          Qt6::Network
+          Qt6::Concurrent)
     add_custom_command(TARGET tests_utilities POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${QT_TEST_DLLS}
+        $<TARGET_FILE:${QT_TEST_TARGET}>
         $<TARGET_FILE_DIR:tests_utilities>
-      COMMENT "Copying Qt DLLs for tests_utilities"
+      COMMENT "Copying $<TARGET_FILE_NAME:${QT_TEST_TARGET}> for tests_utilities"
     )
-  endif()
+  endforeach()
 
   if(MINGW)
     get_filename_component(MINGW_BIN_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
@@ -108,20 +101,14 @@ target_link_libraries(tests_mod_manifest
 add_test(NAME tests_mod_manifest COMMAND tests_mod_manifest)
 
 if(WIN32)
-  set(QT_MANIFEST_TEST_DLLS "")
-  foreach(QT_DLL_NAME Qt6Core.dll Qt6Test.dll)
-    if(EXISTS "${QT_BIN_DIR}/${QT_DLL_NAME}")
-      list(APPEND QT_MANIFEST_TEST_DLLS "${QT_BIN_DIR}/${QT_DLL_NAME}")
-    endif()
-  endforeach()
-  if(QT_MANIFEST_TEST_DLLS)
+  foreach(QT_TEST_TARGET Qt6::Core Qt6::Test)
     add_custom_command(TARGET tests_mod_manifest POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${QT_MANIFEST_TEST_DLLS}
+        $<TARGET_FILE:${QT_TEST_TARGET}>
         $<TARGET_FILE_DIR:tests_mod_manifest>
-      COMMENT "Copying Qt DLLs for tests_mod_manifest"
+      COMMENT "Copying $<TARGET_FILE_NAME:${QT_TEST_TARGET}> for tests_mod_manifest"
     )
-  endif()
+  endforeach()
 endif()
 
 qt_add_executable(tests_ts_translator
@@ -143,20 +130,14 @@ target_link_libraries(tests_ts_translator
 add_test(NAME tests_ts_translator COMMAND tests_ts_translator)
 
 if(WIN32)
-  set(QT_TS_TEST_DLLS "")
-  foreach(QT_DLL_NAME Qt6Core.dll Qt6Test.dll)
-    if(EXISTS "${QT_BIN_DIR}/${QT_DLL_NAME}")
-      list(APPEND QT_TS_TEST_DLLS "${QT_BIN_DIR}/${QT_DLL_NAME}")
-    endif()
-  endforeach()
-  if(QT_TS_TEST_DLLS)
+  foreach(QT_TEST_TARGET Qt6::Core Qt6::Test)
     add_custom_command(TARGET tests_ts_translator POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${QT_TS_TEST_DLLS}
+        $<TARGET_FILE:${QT_TEST_TARGET}>
         $<TARGET_FILE_DIR:tests_ts_translator>
-      COMMENT "Copying Qt DLLs for tests_ts_translator"
+      COMMENT "Copying $<TARGET_FILE_NAME:${QT_TEST_TARGET}> for tests_ts_translator"
     )
-  endif()
+  endforeach()
 endif()
 
 add_test(
