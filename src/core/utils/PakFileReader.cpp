@@ -2,6 +2,79 @@
 #include <QDataStream>
 #include <QtEndian>
 
+namespace {
+
+/// Bytes from the pak magic to end of file for the footer layout of @p version.
+bool footerLayoutMatches(quint32 version, qint64 magicToEof) {
+    if (version >= 1 && version <= 7) {
+        return magicToEof == 44;
+    }
+    if (version == 8) {
+        return magicToEof == 172 || magicToEof == 204;
+    }
+    if (version >= 9 && version <= 11) {
+        return magicToEof == 205;
+    }
+    return version <= 64 && magicToEof >= 44 && magicToEof <= 256;
+}
+
+} // namespace
+
+bool PakFileReader::hasPakFooter(const QString &pakFilePath, QString *error) {
+    const auto fail = [error](const QString &message) {
+        if (error) {
+            *error = message;
+        }
+        return false;
+    };
+
+    QFile file(pakFilePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return fail(QStringLiteral("Failed to open file"));
+    }
+
+    const qint64 fileSize = file.size();
+    if (fileSize < PakFooter::SIZE) {
+        return fail(QStringLiteral("File is too small to be a .pak file"));
+    }
+
+    constexpr qint64 kTailSize = 256;
+    const qint64 tailSize = qMin(fileSize, kTailSize);
+    if (!file.seek(fileSize - tailSize)) {
+        return fail(QStringLiteral("Failed to read file"));
+    }
+
+    const QByteArray tail = file.read(tailSize);
+    if (tail.size() != tailSize) {
+        return fail(QStringLiteral("Failed to read file"));
+    }
+
+    char magic[4];
+    qToLittleEndian<quint32>(PakFooter::MAGIC, magic);
+    const QByteArray magicBytes = QByteArray::fromRawData(magic, 4);
+
+    // The magic may also appear inside stored (uncompressed) archive data, so only accept it
+    // where the version implies the footer must end and with an index that fits in the file.
+    for (qsizetype pos = tail.indexOf(magicBytes); pos >= 0; pos = tail.indexOf(magicBytes, pos + 1)) {
+        const qint64 magicToEof = tail.size() - pos;
+        if (magicToEof < PakFooter::SIZE) {
+            break;
+        }
+
+        const char *fields = tail.constData() + pos;
+        const quint32 version = qFromLittleEndian<quint32>(fields + 4);
+        const quint64 indexOffset = qFromLittleEndian<quint64>(fields + 8);
+        const quint64 indexSize = qFromLittleEndian<quint64>(fields + 16);
+        const quint64 size = static_cast<quint64>(fileSize);
+
+        if (footerLayoutMatches(version, magicToEof) && indexOffset <= size && indexSize <= size - indexOffset) {
+            return true;
+        }
+    }
+
+    return fail(QStringLiteral("Not a valid .pak file (missing pak footer)"));
+}
+
 PakFileReader::ParseResult PakFileReader::extractFilePaths(const QString &pakFilePath) {
     ParseResult result;
     result.success = false;

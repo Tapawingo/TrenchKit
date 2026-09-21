@@ -115,7 +115,7 @@ void ModUpdateModalContent::onDownloadFinished(const QString &savePath) {
     m_statusLabel->setText(tr("Installing update..."));
     m_progressBar->setValue(100);
 
-    if (!m_modManager->replaceMod(m_mod.id, savePath,
+    if (!m_modManager->replaceModFromFile(m_mod.id, savePath,
                                   m_updateInfo.availableVersion,
                                   m_updateInfo.availableFileId)) {
         QFile::remove(savePath);
@@ -178,10 +178,9 @@ void ModUpdateModalContent::onError(const QString &error) {
                             m_statusLabel->setText(tr("Installing update..."));
                             m_progressBar->setValue(100);
 
-                            if (!m_modManager->replaceMod(m_mod.id, filePath,
+                            if (!m_modManager->replaceModFromFile(m_mod.id, filePath,
                                                           m_updateInfo.availableVersion,
                                                           m_updateInfo.availableFileId)) {
-                                QFile::remove(filePath);
                                 MessageModal::critical(m_modalManager, tr("Error"), tr("Failed to install mod update"));
                                 reject();
                                 return;

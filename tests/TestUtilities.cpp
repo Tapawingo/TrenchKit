@@ -1,6 +1,8 @@
 #include <QtTest/QtTest>
 
+#include "core/managers/ModManager.h"
 #include "core/utils/ArchiveExtractor.h"
+#include "core/utils/PakFileReader.h"
 #include "core/utils/UpdateArchiveExtractor.h"
 #include "core/utils/UpdateCleanup.h"
 #include "core/services/UpdaterService.h"
@@ -9,6 +11,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -70,10 +74,24 @@ static bool writeAll(const QString &path, const QByteArray &data) {
     return file.open(QIODevice::WriteOnly) && file.write(data) == data.size();
 }
 
+/// Smallest thing PakFileReader::hasPakFooter() accepts: filler plus a 44 byte footer.
+static QByteArray validPakBytes() {
+    QByteArray bytes(64, 'x');
+    QDataStream stream(&bytes, QIODevice::Append);
+    stream.setByteOrder(QDataStream::LittleEndian);
+    stream << quint32(PakFileReader::PakFooter::MAGIC) << quint32(3) << quint64(0) << quint64(0);
+    bytes.append(QByteArray(20, '\0'));
+    return bytes;
+}
+
 class TestUtilities : public QObject {
     Q_OBJECT
 
 private slots:
+    void initTestCase() {
+        QStandardPaths::setTestModeEnabled(true);
+    }
+
     void testParseVersionFromTag() {
         auto v1 = UpdaterService::parseVersionFromTag("v1.2.3");
         QCOMPARE(v1.major, 1);
@@ -161,6 +179,17 @@ private slots:
         QCOMPARE(result.pakFiles.size(), 1);
         QCOMPARE(QFileInfo(result.pakFiles.first()).fileName(), QStringLiteral("Fixture.pak"));
         QCOMPARE(QFileInfo(result.pakFiles.first()).size(), qint64(4444));
+        QVERIFY(PakFileReader::hasPakFooter(result.pakFiles.first()));
+        ArchiveExtractor::cleanupTempDir(result.tempDir);
+    }
+
+    void testArchiveExtractorRar() {
+        ArchiveExtractor extractor;
+        const auto result = extractor.extractPakFiles(fixture("mod_stored.rar"));
+        QVERIFY2(result.success, qPrintable(result.error));
+        QCOMPARE(result.pakFiles.size(), 1);
+        QCOMPARE(QFileInfo(result.pakFiles.first()).size(), qint64(4444));
+        QVERIFY(PakFileReader::hasPakFooter(result.pakFiles.first()));
         ArchiveExtractor::cleanupTempDir(result.tempDir);
     }
 
@@ -187,8 +216,121 @@ private slots:
             QVERIFY2(result.success, qPrintable(path + ": " + result.error));
             QCOMPARE(result.pakFiles.size(), 1);
             QCOMPARE(QFileInfo(result.pakFiles.first()).size(), qint64(4444));
+            QVERIFY(PakFileReader::hasPakFooter(result.pakFiles.first()));
             ArchiveExtractor::cleanupTempDir(result.tempDir);
         }
+    }
+
+    void testHasPakFooter() {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        const QString good = tempDir.filePath("good.pak");
+        QVERIFY(writeAll(good, validPakBytes()));
+        QVERIFY(PakFileReader::hasPakFooter(good));
+
+        QString error;
+        QVERIFY(!PakFileReader::hasPakFooter(fixture("not_a_pak.pak"), &error));
+        QVERIFY(!error.isEmpty());
+
+        const QString tiny = tempDir.filePath("tiny.pak");
+        QVERIFY(writeAll(tiny, QByteArray(10, 'x')));
+        QVERIFY(!PakFileReader::hasPakFooter(tiny));
+
+        QVERIFY(!PakFileReader::hasPakFooter(fixture("mod_lzma.7z")));
+        QVERIFY(!PakFileReader::hasPakFooter(tempDir.filePath("missing.pak")));
+    }
+
+    void testModManagerRefusesNonPak() {
+        QTemporaryDir storage;
+        QVERIFY(storage.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+        QSignalSpy errors(&manager, &ModManager::errorOccurred);
+
+        QVERIFY(!manager.addMod(fixture("not_a_pak.pak"), {.name = "Fake"}));
+        QVERIFY(!manager.addMod(fixture("mod_stored.rar"), {.name = "Archive"}));
+        QCOMPARE(errors.size(), 2);
+        QVERIFY(manager.getMods().isEmpty());
+    }
+
+    void testModManagerReplaceModNeverInstallsAnArchive() {
+        QTemporaryDir storage;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && work.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+
+        const QString original = work.filePath("Fixture.pak");
+        QVERIFY(writeAll(original, validPakBytes()));
+        QVERIFY(manager.addMod(original, {.name = "Fixture"}));
+        const ModInfo mod = manager.getMods().first();
+        const QString storedPath = (manager.getModsStoragePath() + "/" + mod.fileName);
+        const QByteArray before = readAll(storedPath);
+        QVERIFY(!before.isEmpty());
+
+        QSignalSpy errors(&manager, &ModManager::errorOccurred);
+        QVERIFY(!manager.replaceMod(mod.id, fixture("mod_stored.rar"), "2.0", "2"));
+        QVERIFY(!manager.replaceMod(mod.id, fixture("mod_lzma.7z"), "2.0", "2"));
+        QCOMPARE(errors.size(), 2);
+        QCOMPARE(readAll(storedPath), before);
+        QCOMPARE(manager.getMod(mod.id).version, mod.version);
+    }
+
+    void testModManagerReplaceModFromArchive_data() {
+        QTest::addColumn<QString>("archiveName");
+        QTest::newRow("rar") << "mod_stored.rar";
+        QTest::newRow("7z") << "mod_lzma.7z";
+    }
+
+    void testModManagerReplaceModFromArchive() {
+        QFETCH(QString, archiveName);
+
+        QTemporaryDir storage;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && work.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+
+        const QString original = work.filePath("Fixture.pak");
+        QVERIFY(writeAll(original, validPakBytes()));
+        QVERIFY(manager.addMod(original, {.name = "Fixture", .version = "1.0"}));
+        const ModInfo mod = manager.getMods().first();
+
+        // Downloads arrive as *.tmp, so detection must not depend on the extension.
+        const QString download = work.filePath("update_1_2.tmp");
+        QVERIFY(QFile::copy(fixture(archiveName), download));
+
+        QVERIFY(manager.replaceModFromFile(mod.id, download, "2.0", "42"));
+
+        const QByteArray stored = readAll((manager.getModsStoragePath() + "/" + mod.fileName));
+        QCOMPARE(stored.size(), qsizetype(4444));
+        QVERIFY(stored != validPakBytes());
+        QCOMPARE(manager.getMod(mod.id).version, QStringLiteral("2.0"));
+        QVERIFY(!QFileInfo::exists((manager.getModsStoragePath() + "/" + mod.fileName) + ".new"));
+    }
+
+    void testModManagerReplaceModFromDamagedArchiveKeepsOldMod() {
+        QTemporaryDir storage;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && work.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+
+        const QString original = work.filePath("Fixture.pak");
+        QVERIFY(writeAll(original, validPakBytes()));
+        QVERIFY(manager.addMod(original, {.name = "Fixture", .version = "1.0"}));
+        const ModInfo mod = manager.getMods().first();
+        const QByteArray before = readAll((manager.getModsStoragePath() + "/" + mod.fileName));
+
+        const QString damaged = work.filePath("update.7z");
+        QVERIFY(writeAll(damaged, readAll(fixture("mod_lzma.7z")).left(150)));
+
+        QSignalSpy errors(&manager, &ModManager::errorOccurred);
+        QVERIFY(!manager.replaceModFromFile(mod.id, damaged, "2.0", "42"));
+        QCOMPARE(errors.size(), 1);
+        QCOMPARE(readAll((manager.getModsStoragePath() + "/" + mod.fileName)), before);
+        QCOMPARE(manager.getMod(mod.id).version, QStringLiteral("1.0"));
     }
 
     void testUpdateCleanup() {

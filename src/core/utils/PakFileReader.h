@@ -59,6 +59,16 @@ public:
     };
 
     /**
+     * @brief Cheap sanity check that @p pakFilePath ends in an Unreal pak footer.
+     *
+     * Finds the pak magic in the last 256 bytes and checks that it sits where the
+     * version's footer layout requires, with an index range inside the file. Rejects
+     * archives, truncated or corrupt files that merely carry a .pak extension.
+     * @param error Set to a human-readable message on failure; may be null.
+     */
+    static bool hasPakFooter(const QString &pakFilePath, QString *error = nullptr);
+
+    /**
      * @brief Lists all file paths in the pak index; does not decompress any content.
      */
     static ParseResult extractFilePaths(const QString &pakFilePath);

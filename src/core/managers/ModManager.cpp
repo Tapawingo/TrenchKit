@@ -9,7 +9,9 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QSet>
+#include "core/utils/ArchiveExtractor.h"
 #include "core/utils/ModManifestReader.h"
+#include "core/utils/PakFileReader.h"
 
 ModManager::ModManager(QObject *parent)
     : QObject(parent)
@@ -41,6 +43,12 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
     QFileInfo fileInfo(pakFilePath);
     if (!fileInfo.exists() || !fileInfo.isFile()) {
         emit errorOccurred(tr("Mod file does not exist: %1").arg(pakFilePath));
+        return false;
+    }
+
+    QString pakError;
+    if (!PakFileReader::hasPakFooter(pakFilePath, &pakError)) {
+        emit errorOccurred(tr("%1 is not a valid .pak file: %2").arg(fileInfo.fileName(), pakError));
         return false;
     }
 
@@ -204,24 +212,56 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
             return false;
         }
 
-        QFileInfo newFileInfo(newPakPath);
-        if (!newFileInfo.exists() || !newFileInfo.isFile()) {
-            emit errorOccurred(tr("New mod file does not exist: %1").arg(newPakPath));
-            return false;
-        }
-
         wasEnabled = it->enabled;
         savedPriority = it->priority;
         savedName = it->name;
         fileName = it->fileName;
     }
 
+    const QFileInfo newFileInfo(newPakPath);
+    if (!newFileInfo.exists() || !newFileInfo.isFile()) {
+        emit errorOccurred(tr("New mod file does not exist: %1").arg(newPakPath));
+        return false;
+    }
+
+    QString pakError;
+    if (!PakFileReader::hasPakFooter(newPakPath, &pakError)) {
+        emit errorOccurred(tr("The update for \"%1\" is not a valid .pak file: %2").arg(savedName, pakError));
+        return false;
+    }
+
+    // Stage the copy first so a failed copy can never cost the user the mod they already have.
+    const QString destPath = m_modsStoragePath + "/" + fileName;
+    const QString stagedPath = destPath + ".new";
+    QFile::remove(stagedPath);
+    if (!QFile::copy(newPakPath, stagedPath) || QFileInfo(stagedPath).size() != newFileInfo.size()) {
+        QFile::remove(stagedPath);
+        emit errorOccurred(tr("Failed to copy new mod file to storage"));
+        return false;
+    }
+
     if (wasEnabled) {
         if (!disableMod(modId)) {
+            QFile::remove(stagedPath);
             emit errorOccurred(tr("Failed to disable mod before replacement"));
             return false;
         }
     }
+
+    const auto restoreEnabled = [&]() {
+        if (!wasEnabled) {
+            return;
+        }
+        {
+            QMutexLocker locker(&m_modsMutex);
+            auto it = std::ranges::find_if(m_mods,
+                                   [&modId](const ModInfo &mod) { return mod.id == modId; });
+            if (it != m_mods.end()) {
+                it->priority = savedPriority;
+            }
+        }
+        enableMod(modId);
+    };
 
     ModManifest manifest;
     QString manifestError;
@@ -230,28 +270,16 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
         qDebug() << "Manifest not loaded for" << newPakPath << ":" << manifestError;
     }
 
-    QString oldPath = m_modsStoragePath + "/" + fileName;
-    if (QFile::exists(oldPath)) {
-        if (!QFile::remove(oldPath)) {
-            emit errorOccurred(tr("Failed to remove old mod file"));
-            if (wasEnabled) {
-                {
-                    QMutexLocker locker(&m_modsMutex);
-                    auto it = std::ranges::find_if(m_mods,
-                                           [&modId](const ModInfo &mod) { return mod.id == modId; });
-                    if (it != m_mods.end()) {
-                        it->priority = savedPriority;
-                    }
-                }
-                enableMod(modId);
-            }
-            return false;
-        }
+    if (QFile::exists(destPath) && !QFile::remove(destPath)) {
+        QFile::remove(stagedPath);
+        emit errorOccurred(tr("Failed to remove old mod file"));
+        restoreEnabled();
+        return false;
     }
 
-    QString destPath = m_modsStoragePath + "/" + fileName;
-    if (!QFile::copy(newPakPath, destPath)) {
-        emit errorOccurred(tr("Failed to copy new mod file to storage"));
+    if (!QFile::rename(stagedPath, destPath)) {
+        QFile::remove(stagedPath);
+        emit errorOccurred(tr("Failed to move new mod file into storage"));
         return false;
     }
 
@@ -285,6 +313,61 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
 
     qDebug() << "Replaced mod:" << savedName << "version" << newVersion;
     return true;
+}
+
+bool ModManager::replaceModFromFile(const QString &modId, const QString &filePath,
+                                    const QString &newVersion, const QString &newFileId,
+                                    const QDateTime &uploadDate) {
+    if (!ArchiveExtractor::isArchiveFile(filePath)) {
+        return replaceMod(modId, filePath, newVersion, newFileId, uploadDate);
+    }
+
+    QString currentFileName;
+    {
+        QMutexLocker locker(&m_modsMutex);
+        auto it = std::ranges::find_if(m_mods,
+                               [&modId](const ModInfo &mod) { return mod.id == modId; });
+        if (it == m_mods.end()) {
+            emit errorOccurred(tr("Mod not found."));
+            return false;
+        }
+        currentFileName = it->fileName;
+    }
+
+    ArchiveExtractor extractor;
+    const auto extracted = extractor.extractPakFiles(filePath);
+    if (!extracted.success) {
+        emit errorOccurred(tr("Could not unpack the update: %1").arg(extracted.error));
+        return false;
+    }
+
+    QString chosen;
+    if (extracted.pakFiles.size() == 1) {
+        chosen = extracted.pakFiles.first();
+    } else {
+        for (const QString &pak : extracted.pakFiles) {
+            if (QFileInfo(pak).fileName().compare(currentFileName, Qt::CaseInsensitive) == 0) {
+                chosen = pak;
+                break;
+            }
+        }
+    }
+
+    bool replaced = false;
+    if (chosen.isEmpty()) {
+        QStringList names;
+        for (const QString &pak : extracted.pakFiles) {
+            names.append(QFileInfo(pak).fileName());
+        }
+        emit errorOccurred(tr("The update contains several .pak files (%1) and none matches \"%2\". "
+                              "Remove the mod and add it again to choose which one to install.")
+                               .arg(names.join(QStringLiteral(", ")), currentFileName));
+    } else {
+        replaced = replaceMod(modId, chosen, newVersion, newFileId, uploadDate);
+    }
+
+    ArchiveExtractor::cleanupTempDir(extracted.tempDir);
+    return replaced;
 }
 
 bool ModManager::enableMod(const QString &modId) {
