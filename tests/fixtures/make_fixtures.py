@@ -8,6 +8,7 @@ import os
 import shutil
 import io
 import struct
+import sys
 import subprocess
 import tarfile
 import tempfile
@@ -73,7 +74,33 @@ def find_7z() -> str:
     raise SystemExit("7-Zip not found")
 
 
+def make_solid_fixtures():
+    """A truly solid 7z (one block) whose first entry is 1 GiB of zeros (7 KB packed, seconds to decode), and a solid-flagged RAR5."""
+    pak = make_pak()
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "Mods"))
+        with open(os.path.join(tmp, "filler.bin"), "wb") as f:
+            chunk = bytes(1 << 20)
+            for _ in range(1024):
+                f.write(chunk)
+        with open(os.path.join(tmp, "Mods", "Fixture.pak"), "wb") as f:
+            f.write(pak)
+
+        target = os.path.join(HERE, "mod_solid_bigfiller.7z")
+        if os.path.exists(target):
+            os.remove(target)
+        subprocess.run([find_7z(), "a", "-t7z", "-m0=BZip2", "-mx=1", "-ms=4g", target, "filler.bin", "Mods"],
+                       cwd=tmp, check=True, stdout=subprocess.DEVNULL)
+
+    with open(os.path.join(HERE, "mod_stored_solid.rar"), "wb") as f:
+        f.write(make_rar5_stored("Mods/Fixture.pak", pak, solid=True))
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "solid":
+        make_solid_fixtures()
+        return
+
     pak = make_pak()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -101,6 +128,8 @@ def main():
 
     with zipfile.ZipFile(os.path.join(HERE, "mod_deflate.zip"), "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(zipfile.ZipInfo("Mods/Fixture.pak", (2020, 1, 1, 0, 0, 0)), pak)
+
+    make_solid_fixtures()
 
     with open(os.path.join(HERE, "not_a_pak.pak"), "wb") as f:
         f.write(b"PK\x03\x04 this is really an archive, not a pak" + bytes(200))

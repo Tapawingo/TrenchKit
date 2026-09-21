@@ -473,6 +473,35 @@ private slots:
         QVERIFY(QDir::setCurrent(previousCwd));
     }
 
+    void testIsSolidRar() {
+        QVERIFY(!isSolidRar(fixture("mod_stored.rar")));
+        QVERIFY(isSolidRar(fixture("mod_stored_solid.rar")));
+        QVERIFY(!isSolidRar(fixture("mod_lzma.7z")));
+        QVERIFY(!isSolidRar(fixture("not_a_pak.pak")));
+        QVERIFY(!isSolidRar(fixture("missing.rar")));
+
+        // RAR 1.5-4.x: signature, CRC16, type 0x73, then the 16 bit flags (0x0008 = solid).
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString solid4 = dir.filePath("solid4.rar");
+        const QString plain4 = dir.filePath("plain4.rar");
+        QVERIFY(writeAll(solid4, QByteArray::fromHex("526172211a0700" "0000" "73" "0800" "0d00" "00000000")));
+        QVERIFY(writeAll(plain4, QByteArray::fromHex("526172211a0700" "0000" "73" "0000" "0d00" "00000000")));
+        QVERIFY(isSolidRar(solid4));
+        QVERIFY(!isSolidRar(plain4));
+    }
+
+    void testSolidArchiveIsExtractedAndCancelsMidEntry() {
+        // The archive holds 1 GiB of zeros ahead of the pak. libarchive's own skip of an entry this big
+        // makes the next one read back empty, so the extractor reads skipped entries block by block.
+        ArchiveExtractor extractor;
+        const auto result = extractor.extractPakFiles(fixture("mod_solid_bigfiller.7z"));
+        QVERIFY2(result.success, qPrintable(result.error));
+        QCOMPARE(result.pakFiles.size(), 1);
+        QCOMPARE(QFileInfo(result.pakFiles.first()).size(), qint64(4444));
+        ArchiveExtractor::cleanupTempDir(result.tempDir);
+    }
+
     void testUpdateCleanup() {
         QTemporaryDir tempDir;
         QVERIFY(tempDir.isValid());

@@ -24,6 +24,14 @@ private:
 };
 
 /**
+ * @brief True if @p archivePath is a RAR (v4 or v5) archive flagged as solid.
+ *
+ * Skipping an entry of a solid archive means decoding it, which is why the extractor reads such
+ * entries block by block instead: it can then be cancelled part-way through a huge entry.
+ */
+bool isSolidRar(const QString &archivePath);
+
+/**
  * @brief Reads the CRC32 RAR5 records for entries stored without compression.
  *
  * libarchive verifies checksums of compressed RAR5 entries but never of stored ones,

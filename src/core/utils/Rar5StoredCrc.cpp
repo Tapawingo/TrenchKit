@@ -53,6 +53,48 @@ bool readVint(QFile &file, quint64 &value) {
 
 } // namespace
 
+bool isSolidRar(const QString &archivePath) {
+    QFile file(archivePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+
+    const QByteArray signature = file.read(sizeof(kRar5Signature));
+    if (signature == QByteArray::fromRawData(kRar5Signature, sizeof(kRar5Signature))) {
+        constexpr quint64 kArchiveSolid = 0x4;
+        quint64 headerSize = 0;
+        quint64 type = 0;
+        quint64 flags = 0;
+        if (file.read(4).size() != 4 || !readVint(file, headerSize) || !readVint(file, type)
+            || !readVint(file, flags) || type != 1) {
+            return false;
+        }
+        quint64 skipped = 0;
+        if ((flags & kBlockHasExtra) && !readVint(file, skipped)) {
+            return false;
+        }
+        if ((flags & kBlockHasData) && !readVint(file, skipped)) {
+            return false;
+        }
+        quint64 archiveFlags = 0;
+        return readVint(file, archiveFlags) && (archiveFlags & kArchiveSolid);
+    }
+
+    // RAR 1.5-4.x: "Rar!\x1A\x07\x00", then CRC16, type 0x73 (main header) and 16 bit flags.
+    if (signature.size() >= 7 && signature.startsWith(QByteArray("Rar!\x1A\x07\x00", 7))) {
+        constexpr unsigned char kMainHeaderType = 0x73;
+        constexpr unsigned kMainHeaderSolid = 0x0008;
+        const QByteArray header = signature.mid(7) + file.read(5 - (signature.size() - 7));
+        if (header.size() < 5 || static_cast<unsigned char>(header[2]) != kMainHeaderType) {
+            return false;
+        }
+        const unsigned flags = static_cast<unsigned char>(header[3])
+                             | (static_cast<unsigned>(static_cast<unsigned char>(header[4])) << 8);
+        return (flags & kMainHeaderSolid) != 0;
+    }
+    return false;
+}
+
 void Crc32::update(const char *data, qsizetype size) {
     const auto &table = crcTable();
     quint32 state = m_state;
