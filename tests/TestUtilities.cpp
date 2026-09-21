@@ -628,6 +628,20 @@ private slots:
         }
     }
 
+    void testUpdateExtractorHonoursCancellation() {
+        QTemporaryDir out;
+        QVERIFY(out.isValid());
+        CancelToken token;
+        token.cancel();
+
+        for (const QString &name : {QStringLiteral("mod_deflate.zip"), QStringLiteral("mod_lzma.7z")}) {
+            QString error;
+            QVERIFY2(!UpdateArchiveExtractor::extractArchive(fixture(name), out.filePath("staging"), &error, &token),
+                     qPrintable(name));
+            QCOMPARE(error, QStringLiteral("Cancelled."));
+        }
+    }
+
     void testModManagerAddModAsync() {
         QTemporaryDir storage;
         QTemporaryDir work;

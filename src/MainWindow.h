@@ -9,6 +9,7 @@
 #include <QFutureWatcher>
 #include <QPointer>
 #include "core/managers/ModManager.h"
+#include "core/utils/CancelToken.h"
 #include "core/services/UpdaterService.h"
 #include "core/api/NexusModsClient.h"
 #include "core/api/NexusModsAuth.h"
@@ -93,7 +94,7 @@ private:
     void showUpdateDialog();
     void closeUpdateDialog();
     QString selectUpdateAssetName() const;
-    bool stageUpdate(const QString &archivePath, const QString &version, const QString &updatesDir, QString *error);
+    void stageUpdate(const QString &archivePath, const QString &version, const QString &updatesDir);
     void launchUpdater(const QString &stagingDir, const QString &updatesDir);
     void showSettingsOverlay();
     void hideSettingsOverlay();
@@ -123,6 +124,7 @@ private:
     UpdaterService::ReleaseInfo m_updateRelease;
     bool m_updateAvailable = false;
     bool m_updateInstallStarted = false;
+    CancelTokenPtr m_stageToken;
     bool m_modsLoaded = false;
     bool m_installPathReady = false;
     QPointer<QProgressDialog> m_updateDialog;
