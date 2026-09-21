@@ -486,38 +486,6 @@ ProfileValidationResult ProfileManager::validateProfile(const QString &profileId
     return result;
 }
 
-bool ProfileManager::applyProfile(const QString &profileId, bool ignoreWarnings) {
-    if (!m_modManager) {
-        emit errorOccurred("ModManager not set");
-        return false;
-    }
-
-    ProfileInfo profile = getProfile(profileId);
-    if (profile.id.isEmpty()) {
-        qWarning() << "Profile not found:" << profileId;
-        emit errorOccurred(tr("Profile not found."));
-        return false;
-    }
-
-    if (!ignoreWarnings) {
-        ProfileValidationResult validation = validateProfile(profileId);
-        if (validation.hasMissingMods()) {
-            emit errorOccurred("Cannot apply profile: some mods are missing. "
-                             "Use validation to see details.");
-            return false;
-        }
-    }
-
-    bool success = applyProfileInternal(profile);
-    if (success) {
-        setActiveProfile(profileId);
-        emit profileApplied(profileId);
-        qDebug() << "Applied profile:" << profile.name;
-    }
-
-    return success;
-}
-
 CancelTokenPtr ProfileManager::applyProfileAsync(const QString &profileId, bool ignoreWarnings, QObject *context,
                                                  std::function<void(bool)> onFinished) {
     const auto fail = [&](const QString &message) {
@@ -545,7 +513,7 @@ CancelTokenPtr ProfileManager::applyProfileAsync(const QString &profileId, bool 
     QPointer<ProfileManager> self(this);
     return m_modManager->setModsEnabledAsync(idsToEnable, true, context,
         [self, profileId, name = profile.name, onFinished = std::move(onFinished)](const ModManager::EnableOutcome &outcome) {
-        // Mods that could not be enabled were already reported; like applyProfile() the profile still counts as applied.
+        // Mods that could not be enabled were already reported one by one; the profile still counts as applied.
         if (!self || outcome.cancelled) {
             onFinished(false);
             return;
@@ -1133,19 +1101,6 @@ ProfileInfo ProfileManager::captureCurrentState() const {
     }
 
     return profile;
-}
-
-bool ProfileManager::applyProfileInternal(const ProfileInfo &profile) {
-    if (!m_modManager) {
-        return false;
-    }
-
-    const QStringList idsToEnable = prepareProfile(profile);
-    for (const QString &modId : idsToEnable) {
-        m_modManager->enableMod(modId);
-    }
-
-    return true;
 }
 
 QStringList ProfileManager::prepareProfile(const ProfileInfo &profile) {

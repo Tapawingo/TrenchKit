@@ -437,7 +437,7 @@ bool ModManager::finishReplace(const PendingReplace &pending, const StagedPak &s
                 it->priority = savedPriority;
             }
         }
-        enableMod(modId);
+        enableModBlocking(modId);
     };
 
     if (QFile::exists(destPath) && !QFile::remove(destPath)) {
@@ -477,7 +477,7 @@ bool ModManager::finishReplace(const PendingReplace &pending, const StagedPak &s
             if (needsReenable) {
                 *needsReenable = true;
             }
-        } else if (!enableMod(modId)) {
+        } else if (!enableModBlocking(modId)) {
             emit errorOccurred(tr("Failed to re-enable mod after replacement"));
         }
     }
@@ -637,7 +637,7 @@ CancelTokenPtr ModManager::replaceModFromFile(const QString &modId, const QStrin
     return token;
 }
 
-bool ModManager::enableMod(const QString &modId) {
+bool ModManager::enableModBlocking(const QString &modId) {
     ModInfo modCopy;
     bool alreadyEnabled = false;
 
@@ -733,50 +733,20 @@ bool ModManager::disableMod(const QString &modId) {
     return true;
 }
 
-bool ModManager::setAllModsEnabled(bool enabled) {
-    QList<ModInfo> modsToProcess;
+bool ModManager::disableAllMods() {
+    QStringList enabledIds;
     {
         QMutexLocker locker(&m_modsMutex);
         for (const ModInfo &mod : m_mods) {
-            if (mod.enabled != enabled) {
-                modsToProcess.append(mod);
+            if (mod.enabled) {
+                enabledIds.append(mod.id);
             }
         }
     }
-
-    if (modsToProcess.isEmpty()) {
-        return true;
-    }
-
-    bool anyFailed = false;
-    for (const ModInfo &mod : modsToProcess) {
-        bool ok = enabled ? copyModToPaks(mod) : removeModFromPaks(mod);
-        if (!ok) {
-            emit errorOccurred(tr("Failed to %1 mod: %2")
-                .arg(enabled ? tr("enable") : tr("disable"), mod.name));
-            anyFailed = true;
-            continue;
-        }
-
-        QMutexLocker locker(&m_modsMutex);
-        auto it = std::ranges::find_if(m_mods,
-                               [&mod](const ModInfo &item) { return item.id == mod.id; });
-        if (it != m_mods.end()) {
-            it->enabled = enabled;
-        }
-    }
-
-    if (enabled) {
-        renumberEnabledMods();
-    }
-
-    saveMods();
-    emit modsChanged();
-
-    return !anyFailed;
+    return disableMods(enabledIds);
 }
 
-bool ModManager::setModsEnabled(const QStringList &modIds, bool enabled) {
+bool ModManager::disableMods(const QStringList &modIds) {
     if (modIds.isEmpty()) {
         return true;
     }
@@ -786,7 +756,7 @@ bool ModManager::setModsEnabled(const QStringList &modIds, bool enabled) {
     {
         QMutexLocker locker(&m_modsMutex);
         for (const ModInfo &mod : m_mods) {
-            if (idSet.contains(mod.id) && mod.enabled != enabled) {
+            if (idSet.contains(mod.id) && mod.enabled) {
                 modsToProcess.append(mod);
             }
         }
@@ -798,10 +768,8 @@ bool ModManager::setModsEnabled(const QStringList &modIds, bool enabled) {
 
     bool anyFailed = false;
     for (const ModInfo &mod : modsToProcess) {
-        bool ok = enabled ? copyModToPaks(mod) : removeModFromPaks(mod);
-        if (!ok) {
-            emit errorOccurred(tr("Failed to %1 mod: %2")
-                .arg(enabled ? tr("enable") : tr("disable"), mod.name));
+        if (!removeModFromPaks(mod)) {
+            emit errorOccurred(tr("Failed to disable mod: %1").arg(mod.name));
             anyFailed = true;
             continue;
         }
@@ -810,12 +778,8 @@ bool ModManager::setModsEnabled(const QStringList &modIds, bool enabled) {
         auto it = std::ranges::find_if(m_mods,
                                [&mod](const ModInfo &item) { return item.id == mod.id; });
         if (it != m_mods.end()) {
-            it->enabled = enabled;
+            it->enabled = false;
         }
-    }
-
-    if (enabled) {
-        renumberEnabledMods();
     }
 
     saveMods();
@@ -913,7 +877,7 @@ CancelTokenPtr ModManager::setModsEnabledAsync(const QStringList &modIds, bool e
 
     if (!enabled) {
         EnableOutcome outcome;
-        outcome.failed = setModsEnabled(modIds, false) ? 0 : 1;
+        outcome.failed = disableMods(modIds) ? 0 : 1;
         job->onFinished(outcome);
         return job->token;
     }

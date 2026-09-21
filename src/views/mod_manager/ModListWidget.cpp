@@ -551,7 +551,7 @@ void ModListWidget::onEnableAllClicked() {
     bool enableAll = enabledCount < mods.size();
     m_enableAllCheckBox->setEnabled(false);
     if (!enableAll) {
-        m_modManager->setAllModsEnabled(false);
+        m_modManager->disableAllMods();
         m_enableAllCheckBox->setEnabled(true);
         return;
     }
@@ -968,7 +968,7 @@ void ModListWidget::showSelectionContextMenu(const QPoint &globalPos) {
         if (selectedAction == enableSelected) {
             enableModsInBackground(modIds);
         } else if (selectedAction == disableSelected) {
-            m_modManager->setModsEnabled(modIds, false);
+            m_modManager->disableMods(modIds);
         } else if (selectedAction == registerNexus) {
             startNexusRegistrationQueue(modIds);
         } else if (selectedAction == registerItch) {
@@ -998,7 +998,7 @@ void ModListWidget::showSelectionContextMenu(const QPoint &globalPos) {
     if (selectedAction == enableSelected) {
         enableModsInBackground(modIds);
     } else if (selectedAction == disableSelected) {
-        m_modManager->setModsEnabled(modIds, false);
+        m_modManager->disableMods(modIds);
     } else if (selectedAction == registerNexus) {
         startNexusRegistrationQueue(modIds);
     } else if (selectedAction == registerItch) {
