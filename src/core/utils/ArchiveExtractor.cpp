@@ -192,6 +192,33 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         return {false, {}, "", error};
     };
 
+    // Skipping an entry decodes it whenever the data is compressed together with other entries (solid
+    // RAR, 7z) or sits behind a stream filter (tar.*); only zip and non-solid RAR can seek past it.
+    // Such entries are read block by block: libarchive's own skip mis-reads the entry that follows a
+    // very large one in a solid 7z.
+    const ArchiveFormat format = detectFormat(archivePath);
+    const bool skipDecodes = format != ArchiveFormat::Zip
+                             && !(format == ArchiveFormat::Rar && !isSolidRar(archivePath));
+
+    enum class SkipResult { Done, Failed };
+    const auto skipEntry = [&]() {
+        if (!skipDecodes) {
+            return archive_read_data_skip(a.get()) < ARCHIVE_WARN ? SkipResult::Failed : SkipResult::Done;
+        }
+        for (;;) {
+            const void *buff = nullptr;
+            size_t size = 0;
+            int64_t offset = 0;
+            const int result = archive_read_data_block(a.get(), &buff, &size, &offset);
+            if (result == ARCHIVE_EOF) {
+                return SkipResult::Done;
+            }
+            if (result < ARCHIVE_WARN) {
+                return SkipResult::Failed;
+            }
+        }
+    };
+
     Rar5StoredCrc storedCrcs(archivePath);
     QStringList pakFiles;
     struct archive_entry *entry = nullptr;
@@ -217,8 +244,11 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         const bool isRegular = archive_entry_filetype(entry) == AE_IFREG;
         const std::optional<quint32> expectedCrc = isRegular ? storedCrcs.take(fileName) : std::nullopt;
         if (!isRegular || !isPakFile(fileName)) {
-            if (archive_read_data_skip(a.get()) < ARCHIVE_WARN) {
+            switch (skipEntry()) {
+            case SkipResult::Failed:
                 return fail(QString("Failed to read archive contents: %1").arg(libarchiveError(a.get())));
+            case SkipResult::Done:
+                break;
             }
             continue;
         }
