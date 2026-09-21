@@ -9,22 +9,27 @@
 
 bool UpdateArchiveExtractor::extractArchive(const QString &archivePath,
                                            const QString &destDir,
-                                           QString *error) {
+                                           QString *error,
+                                           const CancelToken *cancel) {
     QString lower = archivePath.toLower();
 
     if (lower.endsWith(".zip")) {
-        if (extractWithZip(archivePath, destDir, error)) {
+        if (extractWithZip(archivePath, destDir, error, cancel)) {
             return true;
         }
-        return extractWithLibarchive(archivePath, destDir, error);
+        if (cancel && cancel->isCancelled()) {
+            return false;
+        }
+        return extractWithLibarchive(archivePath, destDir, error, cancel);
     }
 
-    return extractWithLibarchive(archivePath, destDir, error);
+    return extractWithLibarchive(archivePath, destDir, error, cancel);
 }
 
 bool UpdateArchiveExtractor::extractWithLibarchive(const QString &archivePath,
                                                    const QString &destDir,
-                                                   QString *error) {
+                                                   QString *error,
+                                                   const CancelToken *cancel) {
     QFileInfo archiveInfo(archivePath);
     if (!archiveInfo.exists() || !archiveInfo.isFile()) {
         if (error) {
@@ -57,6 +62,13 @@ bool UpdateArchiveExtractor::extractWithLibarchive(const QString &archivePath,
 
     struct archive_entry *entry;
     for (;;) {
+        if (cancel && cancel->isCancelled()) {
+            if (error) {
+                *error = "Cancelled.";
+            }
+            archive_read_free(a);
+            return false;
+        }
         const int headerResult = archive_read_next_header(a, &entry);
         if (headerResult == ARCHIVE_EOF) {
             break;
@@ -112,6 +124,14 @@ bool UpdateArchiveExtractor::extractWithLibarchive(const QString &archivePath,
         qint64 totalWritten = 0;
 
         while ((readResult = archive_read_data_block(a, &buff, &size, &offset)) == ARCHIVE_OK) {
+            if (cancel && cancel->isCancelled()) {
+                if (error) {
+                    *error = "Cancelled.";
+                }
+                outFile.close();
+                archive_read_free(a);
+                return false;
+            }
             const qint64 written = outFile.write(static_cast<const char*>(buff),
                                                  static_cast<qint64>(size));
             if (written != static_cast<qint64>(size)) {
@@ -153,7 +173,8 @@ bool UpdateArchiveExtractor::extractWithLibarchive(const QString &archivePath,
 
 bool UpdateArchiveExtractor::extractWithZip(const QString &zipPath,
                                            const QString &destDir,
-                                           QString *error) {
+                                           QString *error,
+                                           const CancelToken *cancel) {
     QFileInfo zipInfo(zipPath);
     if (!zipInfo.exists() || !zipInfo.isFile()) {
         if (error) {
@@ -181,6 +202,13 @@ bool UpdateArchiveExtractor::extractWithZip(const QString &zipPath,
 
     const int totalEntries = zip_entries_total(zip);
     for (int i = 0; i < totalEntries; ++i) {
+        if (cancel && cancel->isCancelled()) {
+            zip_close(zip);
+            if (error) {
+                *error = "Cancelled.";
+            }
+            return false;
+        }
         if (zip_entry_openbyindex(zip, i) < 0) {
             zip_close(zip);
             if (error) {

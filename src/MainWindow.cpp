@@ -699,7 +699,6 @@ void MainWindow::onUpdateDownloadFinished(const QString &savePath) {
     }
     m_updateInstallStarted = true;
     if (m_updateDialog) {
-        m_updateDialog->setCancelButton(nullptr);
         m_updateDialog->setRange(0, 0);
         m_updateDialog->setLabelText(tr("Installing update..."));
     }
@@ -723,15 +722,7 @@ void MainWindow::onUpdateDownloadFinished(const QString &savePath) {
     }
 #endif
 
-    QString error;
-    if (!stageUpdate(savePath, version, updatesDir, &error)) {
-        MessageModal::warning(m_modalManager, tr("Update Error"), error);
-        return;
-    }
-
-    const QString stagingDir = QDir(updatesDir)
-                                   .filePath(QString("staging/%1").arg(version));
-    launchUpdater(stagingDir, updatesDir);
+    stageUpdate(savePath, version, updatesDir);
 }
 
 void MainWindow::beginUpdateDownload() {
@@ -784,6 +775,9 @@ void MainWindow::showUpdateDialog() {
     m_updateDialog->setAutoClose(false);
     m_updateDialog->setAutoReset(false);
     connect(m_updateDialog, &QProgressDialog::canceled, this, [this]() {
+        if (m_stageToken) {
+            m_stageToken->cancel();
+        }
         if (m_updater) {
             m_updater->cancelDownload();
         }
@@ -823,35 +817,55 @@ QString MainWindow::selectUpdateAssetName() const {
 #endif
 }
 
-bool MainWindow::stageUpdate(const QString &archivePath,
+void MainWindow::stageUpdate(const QString &archivePath,
                              const QString &version,
-                             const QString &updatesDir,
-                             QString *error) {
+                             const QString &updatesDir) {
     const QString stagingDir = QDir(updatesDir).filePath(QString("staging/%1").arg(version));
 
-    QDir dir(stagingDir);
-    if (dir.exists() && !dir.removeRecursively()) {
-        if (error) {
-            *error = tr("Failed to clear existing staging directory.");
-        }
-        return false;
-    }
-    if (!dir.mkpath(".")) {
-        if (error) {
-            *error = tr("Failed to create staging directory.");
-        }
-        return false;
-    }
+    const CancelTokenPtr token = std::make_shared<CancelToken>();
+    m_stageToken = token;
 
-    QString extractError;
-    if (!UpdateArchiveExtractor::extractArchive(archivePath, stagingDir, &extractError)) {
-        if (error) {
-            *error = tr("Failed to extract update: %1").arg(extractError);
+    // Clearing, creating and extracting all hit the disk hard; keep them off the UI thread.
+    // The result is an error message, empty on success.
+    auto *watcher = new QFutureWatcher<QString>(this);
+    connect(watcher, &QFutureWatcher<QString>::finished, this, [this, watcher, token, stagingDir, updatesDir]() {
+        const QString error = watcher->result();
+        watcher->deleteLater();
+        if (m_stageToken == token) {
+            m_stageToken.reset();
         }
-        return false;
-    }
 
-    return true;
+        if (token->isCancelled()) {
+            QDir(stagingDir).removeRecursively();
+            m_updateInstallStarted = false;
+            return;
+        }
+        if (!error.isEmpty()) {
+            m_updateInstallStarted = false;
+            closeUpdateDialog();
+            MessageModal::warning(m_modalManager, tr("Update Error"), error);
+            return;
+        }
+
+        launchUpdater(stagingDir, updatesDir);
+    });
+
+    watcher->setFuture(QtConcurrent::run([archivePath, stagingDir, token]() -> QString {
+        QDir dir(stagingDir);
+        if (dir.exists() && !dir.removeRecursively()) {
+            return tr("Failed to clear existing staging directory.");
+        }
+        if (!dir.mkpath(".")) {
+            return tr("Failed to create staging directory.");
+        }
+
+        QString extractError;
+        if (!UpdateArchiveExtractor::extractArchive(archivePath, stagingDir, &extractError, token.get())) {
+            dir.removeRecursively();
+            return tr("Failed to extract update: %1").arg(extractError);
+        }
+        return QString();
+    }));
 }
 
 void MainWindow::launchUpdater(const QString &stagingDir, const QString &updatesDir) {
