@@ -84,6 +84,11 @@ static QByteArray validPakBytes() {
     return bytes;
 }
 
+static QStringList extractDirs() {
+    return QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+        .entryList({QStringLiteral("TrenchKit_extract_*")}, QDir::Dirs | QDir::NoDotAndDotDot);
+}
+
 class TestUtilities : public QObject {
     Q_OBJECT
 
@@ -148,7 +153,7 @@ private slots:
 
         QFile pakFile(QDir(sourceDir).filePath("mods/test.pak"));
         QVERIFY(pakFile.open(QIODevice::WriteOnly));
-        pakFile.write("pak-data");
+        pakFile.write(validPakBytes());
         pakFile.close();
 
         QFile readmeFile(QDir(sourceDir).filePath("mods/readme.txt"));
@@ -193,6 +198,53 @@ private slots:
         ArchiveExtractor::cleanupTempDir(result.tempDir);
     }
 
+    void testArchiveExtractorRejectsDamagedArchives_data() {
+        QTest::addColumn<QString>("fixtureName");
+        QTest::addColumn<int>("keepBytes");
+        QTest::newRow("7z truncated") << "mod_lzma.7z" << 150;
+        QTest::newRow("7z header only") << "mod_lzma.7z" << 40;
+        QTest::newRow("rar truncated in data") << "mod_stored.rar" << 2000;
+        QTest::newRow("rar truncated in header") << "mod_stored.rar" << 30;
+    }
+
+    void testArchiveExtractorRejectsDamagedArchives() {
+        QFETCH(QString, fixtureName);
+        QFETCH(int, keepBytes);
+
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString damaged = tempDir.filePath(fixtureName);
+        QVERIFY(writeAll(damaged, readAll(fixture(fixtureName)).left(keepBytes)));
+
+        const QStringList dirsBefore = extractDirs();
+        ArchiveExtractor extractor;
+        const auto result = extractor.extractPakFiles(damaged);
+        QVERIFY(!result.success);
+        QVERIFY(!result.error.isEmpty());
+        QVERIFY(result.pakFiles.isEmpty());
+        QCOMPARE(extractDirs(), dirsBefore);
+    }
+
+    void testArchiveExtractorRejectsCorruptedData() {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        // The packed LZMA stream sits right after the 32 byte signature header.
+        QByteArray bytes = readAll(fixture("mod_lzma.7z"));
+        for (int i = 40; i < 70; ++i) {
+            bytes[i] = static_cast<char>(bytes[i] ^ 0xFF);
+        }
+        const QString damaged = tempDir.filePath("corrupt.7z");
+        QVERIFY(writeAll(damaged, bytes));
+
+        const QStringList dirsBefore = extractDirs();
+        ArchiveExtractor extractor;
+        const auto result = extractor.extractPakFiles(damaged);
+        QVERIFY2(!result.success, "corrupt packed data must fail the extraction");
+        QVERIFY(!result.error.isEmpty());
+        QCOMPARE(extractDirs(), dirsBefore);
+    }
+
     void testArchiveExtractorOtherFormats_data() {
         QTest::addColumn<QString>("archiveName");
         QTest::newRow("tar.gz") << "mod.tar.gz";
@@ -219,6 +271,43 @@ private slots:
             QVERIFY(PakFileReader::hasPakFooter(result.pakFiles.first()));
             ArchiveExtractor::cleanupTempDir(result.tempDir);
         }
+    }
+
+    void testArchiveExtractorRejectsNonPakEntry() {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        const QString sourceDir = QDir(tempDir.path()).filePath("source");
+        QVERIFY(QDir().mkpath(sourceDir));
+        QVERIFY(writeAll(QDir(sourceDir).filePath("fake.pak"), readAll(fixture("not_a_pak.pak"))));
+
+        const QString zipPath = QDir(tempDir.path()).filePath("fake.zip");
+        QString error;
+        if (!createZipFromDir(sourceDir, zipPath, &error)) {
+            QSKIP(qPrintable(error));
+        }
+
+        const QStringList dirsBefore = extractDirs();
+        ArchiveExtractor extractor;
+        const auto result = extractor.extractPakFiles(zipPath);
+        QVERIFY(!result.success);
+        QVERIFY2(result.error.contains("not a valid .pak"), qPrintable(result.error));
+        QCOMPARE(extractDirs(), dirsBefore);
+    }
+
+    void testIsArchiveFileRecognisesSignatures() {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        for (const QString &name : {QStringLiteral("mod_lzma.7z"), QStringLiteral("mod_stored.rar")}) {
+            const QString renamed = tempDir.filePath(name + ".tmp");
+            QVERIFY(QFile::copy(fixture(name), renamed));
+            QVERIFY2(ArchiveExtractor::isArchiveFile(renamed), qPrintable(name));
+        }
+
+        const QString pak = tempDir.filePath("real.tmp");
+        QVERIFY(writeAll(pak, validPakBytes()));
+        QVERIFY(!ArchiveExtractor::isArchiveFile(pak));
     }
 
     void testHasPakFooter() {
@@ -331,6 +420,31 @@ private slots:
         QCOMPARE(errors.size(), 1);
         QCOMPARE(readAll((manager.getModsStoragePath() + "/" + mod.fileName)), before);
         QCOMPARE(manager.getMod(mod.id).version, QStringLiteral("1.0"));
+    }
+
+    void testCleanupTempDirNeverTouchesOtherDirectories() {
+        QTemporaryDir sandbox;
+        QVERIFY(sandbox.isValid());
+        const QString previousCwd = QDir::currentPath();
+        QVERIFY(QDir::setCurrent(sandbox.path()));
+
+        QVERIFY(writeAll(sandbox.filePath("precious.txt"), "keep"));
+        QVERIFY(QDir(sandbox.path()).mkpath("other/nested"));
+        QVERIFY(writeAll(sandbox.filePath("other/nested/file.txt"), "keep"));
+        QVERIFY(QDir(sandbox.path()).mkpath("TrenchKit_extract_test"));
+        QVERIFY(writeAll(sandbox.filePath("TrenchKit_extract_test/a.pak"), "x"));
+
+        // A failed extraction reports an empty temp dir; QDir("") is the current directory.
+        ArchiveExtractor::cleanupTempDir(QString());
+        ArchiveExtractor::cleanupTempDir(QStringLiteral("."));
+        ArchiveExtractor::cleanupTempDir(sandbox.filePath("other"));
+        QVERIFY(QFileInfo::exists(sandbox.filePath("precious.txt")));
+        QVERIFY(QFileInfo::exists(sandbox.filePath("other/nested/file.txt")));
+
+        ArchiveExtractor::cleanupTempDir(sandbox.filePath("TrenchKit_extract_test"));
+        QVERIFY(!QFileInfo::exists(sandbox.filePath("TrenchKit_extract_test")));
+
+        QVERIFY(QDir::setCurrent(previousCwd));
     }
 
     void testUpdateCleanup() {
