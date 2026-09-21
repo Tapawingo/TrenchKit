@@ -33,7 +33,13 @@ class ModManager : public QObject {
 
 public:
     explicit ModManager(QObject *parent = nullptr);
-    ~ModManager() override = default;
+    /**
+     * @brief Stops a running enable job and keeps the mods it had already finished.
+     *
+     * The pak being copied is abandoned, the mods copied before it stay enabled and are saved, and mods
+     * that had not been started stay disabled, so closing the app never leaves unregistered paks behind.
+     */
+    ~ModManager() override;
 
     /**
      * @brief Sets the Foxhole installation directory used to locate the paks folder.
@@ -257,7 +263,8 @@ private:
     /// Emits an error and returns true when @p modId is still waiting for an enable job.
     bool refuseWhileEnabling(const QString &modId);
     void runEnableJob(const std::shared_ptr<EnableJob> &job);
-    void finishEnableJob(const std::shared_ptr<EnableJob> &job, const EnableWork &work);
+    void finishEnableJob(const std::shared_ptr<EnableJob> &job, const EnableWork &work, bool notify = true);
+    void shutdownEnableJob();
 
     struct StagedPak;
     struct PendingAdd;
@@ -305,6 +312,7 @@ private:
     QList<std::shared_ptr<EnableJob>> m_enableQueue;
     bool m_enableRunning = false;
     QSet<QString> m_enablingIds;
+    std::shared_ptr<EnableJob> m_runningEnable;
 };
 
 #endif // MODMANAGER_H

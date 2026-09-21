@@ -1096,6 +1096,76 @@ private slots:
         QVERIFY(lib.manager.disableMod(b));
     }
 
+    void testClosingWhileEnablingKeepsTheModsThatFinished() {
+        QTemporaryDir storage;
+        QTemporaryDir install;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && install.isValid() && work.isValid());
+        const QString paks = install.filePath("War/Content/Paks");
+        QVERIFY(QDir().mkpath(paks));
+
+        auto manager = std::make_unique<ModManager>();
+        manager->setModsStoragePath(storage.path());
+        manager->setInstallPath(install.path());
+        QStringList ids;
+        for (const QString &name : {QStringLiteral("One"), QStringLiteral("Two"), QStringLiteral("Three"),
+                                    QStringLiteral("Four")}) {
+            const QString source = work.filePath(name + ".pak");
+            QVERIFY(writeAll(source, pakBytesOfSize(64 << 20)));
+            QVERIFY(manager->addMod(source, {.name = name}));
+            ids << manager->getMods().last().id;
+        }
+        manager->setModsEnabledAsync(ids, true, manager.get(), [](const ModManager::EnableOutcome &) {});
+
+        // Close as soon as the first pak is in place, with the rest still to copy.
+        QElapsedTimer timer;
+        timer.start();
+        while (QDir(paks).entryList({QStringLiteral("*.pak")}, QDir::Files).isEmpty() && timer.elapsed() < 20000) {
+            QTest::qWait(2);
+        }
+        QVERIFY(!QDir(paks).entryList({QStringLiteral("*.pak")}, QDir::Files).isEmpty());
+        manager.reset();
+
+        ModManager reopened;
+        reopened.setModsStoragePath(storage.path());
+        reopened.setInstallPath(install.path());
+        QVERIFY(reopened.loadMods());
+        QCOMPARE(int(reopened.getMods().size()), 4);
+
+        QStringList registered;
+        for (const ModInfo &mod : reopened.getMods()) {
+            if (mod.enabled) {
+                registered << mod.numberedFileName;
+            }
+        }
+        registered.sort();
+        QStringList onDisk = QDir(paks).entryList({QStringLiteral("*")}, QDir::Files);
+        onDisk.sort();
+
+        QVERIFY2(!registered.isEmpty(), "a mod that had finished enabling must stay enabled");
+        QCOMPARE(onDisk, registered);
+    }
+
+    void testInterruptedCopiesAreCleanedUpAtStartup() {
+        QTemporaryDir storage;
+        QTemporaryDir install;
+        QVERIFY(storage.isValid() && install.isValid());
+        const QString paks = install.filePath("War/Content/Paks");
+        QVERIFY(QDir().mkpath(paks));
+        QVERIFY(writeAll(QDir(paks).filePath("001_Killed.pak.part"), "half"));
+        QVERIFY(writeAll(QDir(paks).filePath("War-WindowsNoEditor.pak"), "base game"));
+        QVERIFY(writeAll(storage.filePath("abc123.part"), "half"));
+        QVERIFY(writeAll(storage.filePath("abc123.update.part"), "half"));
+
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+        manager.setInstallPath(install.path());
+        QVERIFY(!QFileInfo::exists(QDir(paks).filePath("001_Killed.pak.part")));
+        QVERIFY2(QFileInfo::exists(QDir(paks).filePath("War-WindowsNoEditor.pak")), "only our own copies may go");
+        QVERIFY(!QFileInfo::exists(storage.filePath("abc123.part")));
+        QVERIFY(!QFileInfo::exists(storage.filePath("abc123.update.part")));
+    }
+
     void testReplaceModAsyncKeepsAnEnabledModEnabled() {
         ModLibrary lib;
         QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
