@@ -113,7 +113,7 @@ void ItchModUpdateModalContent::onDownloadFinished(const QString &savePath) {
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(100);
 
-    if (!m_modManager->replaceMod(m_mod.id, savePath, m_updateInfo.availableVersion,
+    if (!m_modManager->replaceModFromFile(m_mod.id, savePath, m_updateInfo.availableVersion,
                                   m_updateInfo.availableUploadId, m_updateInfo.availableUploadDate)) {
         MessageModal::warning(m_modalManager, tr("Error"), tr("Failed to install update."));
         reject();

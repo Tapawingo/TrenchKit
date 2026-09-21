@@ -2,6 +2,14 @@ qt_add_executable(tests_utilities
   TestUtilities.cpp
   ${CMAKE_SOURCE_DIR}/src/core/utils/ArchiveExtractor.h
   ${CMAKE_SOURCE_DIR}/src/core/utils/ArchiveExtractor.cpp
+  ${CMAKE_SOURCE_DIR}/src/core/utils/PakFileReader.h
+  ${CMAKE_SOURCE_DIR}/src/core/utils/PakFileReader.cpp
+  ${CMAKE_SOURCE_DIR}/src/core/utils/ModManifestReader.h
+  ${CMAKE_SOURCE_DIR}/src/core/utils/ModManifestReader.cpp
+  ${CMAKE_SOURCE_DIR}/src/core/models/ModInfo.h
+  ${CMAKE_SOURCE_DIR}/src/core/models/ModInfo.cpp
+  ${CMAKE_SOURCE_DIR}/src/core/managers/ModManager.h
+  ${CMAKE_SOURCE_DIR}/src/core/managers/ModManager.cpp
   ${CMAKE_SOURCE_DIR}/src/core/utils/UpdateArchiveExtractor.h
   ${CMAKE_SOURCE_DIR}/src/core/utils/UpdateArchiveExtractor.cpp
   ${CMAKE_SOURCE_DIR}/src/core/utils/UpdateCleanup.h

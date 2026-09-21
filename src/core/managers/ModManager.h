@@ -61,7 +61,7 @@ public:
 
     /**
      * @brief Registers a pak file and copies it into managed storage.
-     * @returns false if the file cannot be read or a mod with the same ID already exists.
+     * @returns false if the file is not a valid pak, cannot be read, or a mod with the same ID already exists.
      */
     bool addMod(const QString &pakFilePath, const AddModParams &params = {});
 
@@ -72,10 +72,23 @@ public:
 
     /**
      * @brief Replaces the pak file for an existing mod and updates its metadata.
+     *
+     * The existing mod is left untouched unless @p newPakPath is a valid pak.
+     * @returns false (after emitting @c errorOccurred) if the file is not a valid pak or cannot be installed.
      */
     bool replaceMod(const QString &modId, const QString &newPakPath,
                    const QString &newVersion, const QString &newFileId,
                    const QDateTime &uploadDate = QDateTime());
+
+    /**
+     * @brief Like @c replaceMod(), but accepts a downloaded archive as well as a bare pak.
+     *
+     * An archive is extracted first; if it holds several paks the one named like the
+     * mod's current file is used. Fails (after emitting @c errorOccurred) rather than guessing.
+     */
+    bool replaceModFromFile(const QString &modId, const QString &filePath,
+                            const QString &newVersion, const QString &newFileId,
+                            const QDateTime &uploadDate = QDateTime());
 
     /**
      * @brief Copies the mod's pak into the Foxhole paks folder.
