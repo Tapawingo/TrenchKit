@@ -81,3 +81,6 @@ desktop.ini
 *.rar
 *.tar
 *.zip
+
+# Test fixtures (archives are ignored elsewhere)
+!tests/fixtures/*

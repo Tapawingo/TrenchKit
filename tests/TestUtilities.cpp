@@ -56,6 +56,20 @@ static bool createZipFromDir(const QString &sourceDir,
 #endif
 }
 
+static QString fixture(const QString &name) {
+    return QDir(QStringLiteral(TEST_FIXTURES_DIR)).filePath(name);
+}
+
+static QByteArray readAll(const QString &path) {
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+
+static bool writeAll(const QString &path, const QByteArray &data) {
+    QFile file(path);
+    return file.open(QIODevice::WriteOnly) && file.write(data) == data.size();
+}
+
 class TestUtilities : public QObject {
     Q_OBJECT
 
@@ -138,6 +152,43 @@ private slots:
         QVERIFY(extracted.exists());
 
         ArchiveExtractor::cleanupTempDir(result.tempDir);
+    }
+
+    void testArchiveExtractor7zLzma() {
+        ArchiveExtractor extractor;
+        const auto result = extractor.extractPakFiles(fixture("mod_lzma.7z"));
+        QVERIFY2(result.success, qPrintable(result.error));
+        QCOMPARE(result.pakFiles.size(), 1);
+        QCOMPARE(QFileInfo(result.pakFiles.first()).fileName(), QStringLiteral("Fixture.pak"));
+        QCOMPARE(QFileInfo(result.pakFiles.first()).size(), qint64(4444));
+        ArchiveExtractor::cleanupTempDir(result.tempDir);
+    }
+
+    void testArchiveExtractorOtherFormats_data() {
+        QTest::addColumn<QString>("archiveName");
+        QTest::newRow("tar.gz") << "mod.tar.gz";
+        QTest::newRow("tar.bz2") << "mod.tar.bz2";
+        QTest::newRow("tar.xz") << "mod.tar.xz";
+        QTest::newRow("zip (deflate)") << "mod_deflate.zip";
+    }
+
+    void testArchiveExtractorOtherFormats() {
+        QFETCH(QString, archiveName);
+
+        // Once by extension and once by signature only, as downloads arrive as *.tmp.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString renamed = tempDir.filePath("download.tmp");
+        QVERIFY(QFile::copy(fixture(archiveName), renamed));
+
+        for (const QString &path : {fixture(archiveName), renamed}) {
+            ArchiveExtractor extractor;
+            const auto result = extractor.extractPakFiles(path);
+            QVERIFY2(result.success, qPrintable(path + ": " + result.error));
+            QCOMPARE(result.pakFiles.size(), 1);
+            QCOMPARE(QFileInfo(result.pakFiles.first()).size(), qint64(4444));
+            ArchiveExtractor::cleanupTempDir(result.tempDir);
+        }
     }
 
     void testUpdateCleanup() {
