@@ -1,5 +1,6 @@
 #include "ArchiveExtractor.h"
 #include "PakFileReader.h"
+#include "Rar5StoredCrc.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -191,6 +192,7 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         return {false, {}, "", error};
     };
 
+    Rar5StoredCrc storedCrcs(archivePath);
     QStringList pakFiles;
     struct archive_entry *entry = nullptr;
 
@@ -212,7 +214,9 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         }
 
         const QString fileName = QString::fromUtf8(entryName).replace(u'\\', u'/');
-        if (archive_entry_filetype(entry) != AE_IFREG || !isPakFile(fileName)) {
+        const bool isRegular = archive_entry_filetype(entry) == AE_IFREG;
+        const std::optional<quint32> expectedCrc = isRegular ? storedCrcs.take(fileName) : std::nullopt;
+        if (!isRegular || !isPakFile(fileName)) {
             if (archive_read_data_skip(a.get()) < ARCHIVE_WARN) {
                 return fail(QString("Failed to read archive contents: %1").arg(libarchiveError(a.get())));
             }
@@ -232,6 +236,7 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         openOutput = &outFile;
 
         qint64 totalBytes = 0;
+        Crc32 crc;
         for (;;) {
             const void *buff = nullptr;
             size_t size = 0;
@@ -253,6 +258,9 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
                 != static_cast<qint64>(size)) {
                 return fail(QString("Failed to write %1: %2").arg(baseName, outFile.errorString()));
             }
+            if (expectedCrc) {
+                crc.update(static_cast<const char *>(buff), static_cast<qsizetype>(size));
+            }
             totalBytes += static_cast<qint64>(size);
         }
 
@@ -265,6 +273,10 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         if (archive_entry_size_is_set(entry) && totalBytes != archive_entry_size(entry)) {
             return fail(QString("%1 is incomplete (expected %2 bytes, got %3)")
                             .arg(baseName).arg(archive_entry_size(entry)).arg(totalBytes));
+        }
+
+        if (expectedCrc && crc.value() != *expectedCrc) {
+            return fail(QString("Failed to extract %1: Checksum error: CRC32").arg(baseName));
         }
 
         QString pakError;

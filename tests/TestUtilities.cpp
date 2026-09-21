@@ -3,6 +3,7 @@
 #include "core/managers/ModManager.h"
 #include "core/utils/ArchiveExtractor.h"
 #include "core/utils/PakFileReader.h"
+#include "core/utils/Rar5StoredCrc.h"
 #include "core/utils/UpdateArchiveExtractor.h"
 #include "core/utils/UpdateCleanup.h"
 #include "core/services/UpdaterService.h"
@@ -242,6 +243,31 @@ private slots:
         const auto result = extractor.extractPakFiles(damaged);
         QVERIFY2(!result.success, "corrupt packed data must fail the extraction");
         QVERIFY(!result.error.isEmpty());
+        QCOMPARE(extractDirs(), dirsBefore);
+    }
+
+    void testCrc32KnownAnswer() {
+        Crc32 crc;
+        crc.update("1234", 4);
+        crc.update("56789", 5);
+        QCOMPARE(crc.value(), quint32(0xCBF43926));
+    }
+
+    void testArchiveExtractorRejectsCorruptedStoredRar() {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        // libarchive does not verify stored RAR5 entries, so the extractor has to.
+        QByteArray bytes = readAll(fixture("mod_stored.rar"));
+        bytes[2000] = static_cast<char>(bytes[2000] ^ 0xFF);
+        const QString damaged = tempDir.filePath("corrupt.rar");
+        QVERIFY(writeAll(damaged, bytes));
+
+        const QStringList dirsBefore = extractDirs();
+        ArchiveExtractor extractor;
+        const auto result = extractor.extractPakFiles(damaged);
+        QVERIFY2(!result.success, "a CRC mismatch in a stored entry must fail the extraction");
+        QVERIFY2(result.error.contains("CRC32"), qPrintable(result.error));
         QCOMPARE(extractDirs(), dirsBefore);
     }
 
