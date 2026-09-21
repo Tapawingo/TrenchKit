@@ -42,6 +42,14 @@ AddModModalContent::AddModModalContent(ModManager *modManager,
     setupUi();
     setPreferredSize(QSize(350, 280));
 
+    // Closing the modal stops whatever is unpacking or copying in the background.
+    connect(this, &BaseModalContent::rejected, this, [this]() {
+        m_cancelled = true;
+        if (m_activeToken) {
+            m_activeToken->cancel();
+        }
+    });
+
     if (!m_modManager) {
         m_fromFileButton->setEnabled(false);
         m_fromNexusButton->setEnabled(false);
@@ -127,53 +135,87 @@ bool AddModModalContent::isArchiveFile(const QString &filePath) const {
     return ArchiveExtractor::isArchiveFile(filePath);
 }
 
-void AddModModalContent::handleArchiveFile(const QString &archivePath, const QString &nexusModId, const QString &nexusFileId,
-                                           const QString &nexusUrl,
-                                           const QString &author, const QString &description, const QString &version,
-                                           const QString &itchGameId, const QString &itchUrl,
-                                           const QString &itchUploadId,
-                                           const QDateTime &uploadDate, bool isBatchProcessing) {
-    ArchiveExtractor extractor;
-    auto result = extractor.extractPakFiles(archivePath);
-
-    if (!result.success) {
-        MessageModal::warning(m_modalManager, tr("Error"), result.error);
+void AddModModalContent::continueBatch() {
+    m_waitingForModal = false;
+    if (m_cancelled) {
         return;
     }
+    m_currentFileIndex++;
+    QTimer::singleShot(200, this, &AddModModalContent::processNextFile);
+}
 
-    if (result.pakFiles.isEmpty()) {
-        MessageModal::warning(m_modalManager, tr("Error"), tr("No .pak files found in archive"));
-        ArchiveExtractor::cleanupTempDir(result.tempDir);
-        return;
+void AddModModalContent::handleArchiveFile(const FileToProcess &file, bool isBatchProcessing) {
+    // The batch loop stays paused until this archive has been dealt with.
+    if (isBatchProcessing) {
+        m_waitingForModal = true;
+    }
+    if (m_processingLabel) {
+        m_processingLabel->setText(tr("Unpacking %1...").arg(QFileInfo(file.filePath).fileName()));
+    }
+    if (m_processingProgress) {
+        m_processingProgress->setRange(0, 0);
     }
 
-    QStringList selectedPaks;
-
-    if (result.pakFiles.size() == 1) {
-        selectedPaks.append(result.pakFiles.first());
-
-        for (const QString &pakPath : selectedPaks) {
-            handlePakFile(pakPath, nexusModId, nexusFileId, nexusUrl, author, description, version, itchGameId,
-                          itchUrl, itchUploadId, QString(), uploadDate);
+    m_activeToken = ArchiveExtractor::extractPakFilesAsync(file.filePath, this,
+        [=, this](const ArchiveExtractor::ExtractResult &result) {
+        if (m_processingProgress) {
+            m_processingProgress->setRange(0, static_cast<int>(m_filesToProcess.size()));
+            m_processingProgress->setValue(m_currentFileIndex);
         }
 
-        ArchiveExtractor::cleanupTempDir(result.tempDir);
-
-        if (!isBatchProcessing && !selectedPaks.isEmpty()) {
-            accept();
+        if (isBatchProcessing && (file.filePath.contains("nexus_mod_") || file.filePath.contains("itch_game_"))) {
+            QFile::remove(file.filePath);
         }
-    } else {
+
+        if (m_cancelled || result.cancelled) {
+            ArchiveExtractor::cleanupTempDir(result.tempDir);
+            return;
+        }
+
+        if (!result.success) {
+            MessageModal::warning(m_modalManager, tr("Error"), result.error);
+            if (isBatchProcessing) {
+                continueBatch();
+            }
+            return;
+        }
+
+        if (result.pakFiles.isEmpty()) {
+            MessageModal::warning(m_modalManager, tr("Error"), tr("No .pak files found in archive"));
+            ArchiveExtractor::cleanupTempDir(result.tempDir);
+            if (isBatchProcessing) {
+                continueBatch();
+            }
+            return;
+        }
+
+        FileToProcess meta = file;
+        meta.customModName.clear();
+
+        const auto finish = [=, this](bool anyAdded) {
+            ArchiveExtractor::cleanupTempDir(result.tempDir);
+            if (isBatchProcessing) {
+                continueBatch();
+            } else if (anyAdded) {
+                accept();
+            }
+        };
+
+        if (result.pakFiles.size() == 1) {
+            addPaksSequentially(result.pakFiles, meta, [finish]() { finish(true); });
+            return;
+        }
+
         QStringList fileNames;
         for (const QString &path : result.pakFiles) {
             fileNames.append(QFileInfo(path).fileName());
         }
 
-        auto * const fileModal = new FileSelectionModalContent(fileNames, QFileInfo(archivePath).fileName(), true);
-        connect(fileModal, &FileSelectionModalContent::accepted, this, [this, result, fileModal, nexusModId, nexusFileId, nexusUrl, author, description, version, itchGameId, itchUrl, itchUploadId, uploadDate, isBatchProcessing]() {
-            QStringList selectedFileNames = fileModal->getSelectedFiles();
+        auto * const fileModal = new FileSelectionModalContent(fileNames, QFileInfo(file.filePath).fileName(), true);
+        connect(fileModal, &FileSelectionModalContent::accepted, this, [=, this]() {
             QStringList selectedPaks;
 
-            for (const QString &fileName : selectedFileNames) {
+            for (const QString &fileName : fileModal->getSelectedFiles()) {
                 for (const QString &pakPath : result.pakFiles) {
                     if (QFileInfo(pakPath).fileName() == fileName) {
                         selectedPaks.append(pakPath);
@@ -182,95 +224,83 @@ void AddModModalContent::handleArchiveFile(const QString &archivePath, const QSt
                 }
             }
 
-            for (const QString &pakPath : selectedPaks) {
-                handlePakFile(pakPath, nexusModId, nexusFileId, nexusUrl, author, description, version, itchGameId,
-                              itchUrl, itchUploadId, QString(), uploadDate);
-            }
-
+            const bool anySelected = !selectedPaks.isEmpty();
+            addPaksSequentially(selectedPaks, meta, [finish, anySelected]() { finish(anySelected); });
+        });
+        connect(fileModal, &FileSelectionModalContent::rejected, this, [=, this]() {
             ArchiveExtractor::cleanupTempDir(result.tempDir);
 
             if (isBatchProcessing) {
-                m_waitingForModal = false;
-                m_currentFileIndex++;
-                QTimer::singleShot(200, this, &AddModModalContent::processNextFile);
-            } else if (!selectedPaks.isEmpty()) {
-                accept();
+                continueBatch();
             }
         });
-        connect(fileModal, &FileSelectionModalContent::rejected, this, [this, result, isBatchProcessing]() {
-            ArchiveExtractor::cleanupTempDir(result.tempDir);
-
-            if (isBatchProcessing) {
-                m_waitingForModal = false;
-                m_currentFileIndex++;
-                QTimer::singleShot(200, this, &AddModModalContent::processNextFile);
-            }
-        });
-
-        if (isBatchProcessing) {
-            m_waitingForModal = true;
-        }
 
         m_modalManager->showModal(fileModal);
-    }
+    });
 }
 
-void AddModModalContent::handlePakFile(const QString &pakPath, const QString &nexusModId, const QString &nexusFileId,
-                                       const QString &nexusUrl,
-                                       const QString &author, const QString &description, const QString &version,
-                                       const QString &itchGameId, const QString &itchUrl,
-                                       const QString &itchUploadId,
-                                       const QString &customModName, const QDateTime &uploadDate) {
-    if (ArchiveExtractor::isArchiveFile(pakPath)) {
-        handleArchiveFile(pakPath, nexusModId, nexusFileId, nexusUrl, author, description, version,
-                          itchGameId, itchUrl, itchUploadId, uploadDate, false);
+void AddModModalContent::addPaksSequentially(const QStringList &pakPaths, const FileToProcess &meta,
+                                             std::function<void()> onDone) {
+    if (pakPaths.isEmpty() || m_cancelled) {
+        onDone();
         return;
     }
 
-    QString normalizedPath = pakPath;
-    if (!pakPath.endsWith(".pak", Qt::CaseInsensitive)) {
-        auto parseResult = PakFileReader::extractFilePaths(pakPath);
+    FileToProcess next = meta;
+    next.filePath = pakPaths.first();
+    const QStringList rest = pakPaths.mid(1);
+    handlePakFile(next, [this, rest, meta, onDone = std::move(onDone)]() {
+        addPaksSequentially(rest, meta, onDone);
+    });
+}
+
+void AddModModalContent::handlePakFile(const FileToProcess &file, std::function<void()> onDone) {
+    QString normalizedPath = file.filePath;
+    if (!normalizedPath.endsWith(".pak", Qt::CaseInsensitive)) {
+        auto parseResult = PakFileReader::extractFilePaths(normalizedPath);
         if (!parseResult.success) {
             MessageModal::warning(m_modalManager, tr("Error"),
                                   tr("Downloaded file is not a valid .pak or supported archive."));
+            onDone();
             return;
         }
 
-        QFileInfo fileInfo(pakPath);
+        QFileInfo fileInfo(normalizedPath);
         QString newPath = fileInfo.path() + "/" + fileInfo.completeBaseName() + ".pak";
         if (QFile::exists(newPath)) {
             QFile::remove(newPath);
         }
-        if (QFile::rename(pakPath, newPath)) {
+        if (QFile::rename(normalizedPath, newPath)) {
             normalizedPath = newPath;
         }
     }
 
-    QString modName;
-    if (!customModName.isEmpty()) {
-        modName = customModName;
-    } else {
-        QFileInfo fileInfo(normalizedPath);
-        modName = fileInfo.completeBaseName();
-    }
+    const QString modName = !file.customModName.isEmpty() ? file.customModName
+                                                          : QFileInfo(normalizedPath).completeBaseName();
 
-    if (!m_modManager->addMod(normalizedPath, {
+    m_activeToken = m_modManager->addModAsync(normalizedPath, {
             .name = modName,
-            .nexusModId = nexusModId,
-            .nexusFileId = nexusFileId,
-            .nexusUrl = nexusUrl,
-            .author = author,
-            .description = description,
-            .version = version,
-            .itchGameId = itchGameId,
-            .itchUrl = itchUrl,
-            .itchUploadId = itchUploadId,
-            .uploadDate = uploadDate
-        })) {
-        MessageModal::warning(m_modalManager, tr("Error"), tr("Failed to add mod: %1").arg(modName));
-    } else {
-        emit modAdded(modName);
-    }
+            .nexusModId = file.nexusModId,
+            .nexusFileId = file.nexusFileId,
+            .nexusUrl = file.nexusUrl,
+            .author = file.author,
+            .description = file.description,
+            .version = file.version,
+            .itchGameId = file.itchGameId,
+            .itchUrl = file.itchUrl,
+            .itchUploadId = file.itchUploadId,
+            .uploadDate = file.uploadDate
+        }, this, [this, modName, onDone = std::move(onDone)](bool added) {
+        if (m_cancelled) {
+            return;
+        }
+        if (!added) {
+            MessageModal::warning(m_modalManager, tr("Error"), tr("Failed to add mod: %1").arg(modName));
+        } else {
+            emit modAdded(modName);
+        }
+        onDone();
+    });
 }
 
 void AddModModalContent::onFromNexusClicked() {
@@ -392,42 +422,26 @@ void AddModModalContent::processNextFile() {
         return;
     }
 
-    const FileToProcess &fileData = m_filesToProcess[m_currentFileIndex];
+    if (m_cancelled) {
+        return;
+    }
+
+    const FileToProcess fileData = m_filesToProcess[m_currentFileIndex];
     m_processingLabel->setText(tr("Processing file %1 of %2...")
         .arg(m_currentFileIndex + 1).arg(m_filesToProcess.size()));
     m_processingProgress->setValue(m_currentFileIndex);
 
-    QCoreApplication::processEvents();
-
-    const QString &filePath = fileData.filePath;
-
-    if (isArchiveFile(filePath)) {
-        handleArchiveFile(filePath, fileData.nexusModId, fileData.nexusFileId,
-                         fileData.nexusUrl, fileData.author, fileData.description, fileData.version,
-                         fileData.itchGameId, fileData.itchUrl, fileData.itchUploadId,
-                         fileData.uploadDate, true);
-
-        if (filePath.contains("nexus_mod_") || filePath.contains("itch_game_")) {
-            QFile::remove(filePath);
-        }
-
-        if (m_waitingForModal) {
-            return;
-        }
-    } else {
-        handlePakFile(filePath, fileData.nexusModId, fileData.nexusFileId,
-                     fileData.nexusUrl, fileData.author, fileData.description, fileData.version,
-                     fileData.itchGameId, fileData.itchUrl, fileData.itchUploadId,
-                     fileData.customModName, fileData.uploadDate);
-
-        if (filePath.contains("nexus_mod_") || filePath.contains("itch_game_")) {
-            QFile::remove(filePath);
-        }
+    if (isArchiveFile(fileData.filePath)) {
+        // Unpacking runs on a worker thread; the batch resumes from its completion handler.
+        handleArchiveFile(fileData, true);
+        return;
     }
 
-    m_currentFileIndex++;
-
-    QCoreApplication::processEvents();
-
-    QTimer::singleShot(200, this, &AddModModalContent::processNextFile);
+    m_waitingForModal = true;
+    handlePakFile(fileData, [this, filePath = fileData.filePath]() {
+        if (filePath.contains("nexus_mod_") || filePath.contains("itch_game_")) {
+            QFile::remove(filePath);
+        }
+        continueBatch();
+    });
 }

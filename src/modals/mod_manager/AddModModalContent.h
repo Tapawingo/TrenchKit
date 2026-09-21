@@ -6,6 +6,8 @@
 #define ADDMODMODALCONTENT_H
 
 #include "common/modals/BaseModalContent.h"
+#include "core/utils/CancelToken.h"
+#include <functional>
 #include "core/models/ItchUploadInfo.h"
 #include "core/models/NexusFileInfo.h"
 #include <QString>
@@ -74,18 +76,11 @@ private:
 
     void setupUi();
     void retranslateUi();
-    void handleArchiveFile(const QString &archivePath, const QString &nexusModId = QString(), const QString &nexusFileId = QString(),
-                           const QString &nexusUrl = QString(),
-                           const QString &author = QString(), const QString &description = QString(), const QString &version = QString(),
-                           const QString &itchGameId = QString(), const QString &itchUrl = QString(),
-                           const QString &itchUploadId = QString(),
-                           const QDateTime &uploadDate = QDateTime(), bool isBatchProcessing = false);
-    void handlePakFile(const QString &pakPath, const QString &nexusModId = QString(), const QString &nexusFileId = QString(),
-                       const QString &nexusUrl = QString(),
-                       const QString &author = QString(), const QString &description = QString(), const QString &version = QString(),
-                       const QString &itchGameId = QString(), const QString &itchUrl = QString(),
-                       const QString &itchUploadId = QString(),
-                       const QString &customModName = QString(), const QDateTime &uploadDate = QDateTime());
+    void handleArchiveFile(const FileToProcess &file, bool isBatchProcessing);
+    /// Adds a pak asynchronously and calls @p onDone (unless cancelled) once it has been handled.
+    void handlePakFile(const FileToProcess &file, std::function<void()> onDone);
+    void addPaksSequentially(const QStringList &pakPaths, const FileToProcess &meta, std::function<void()> onDone);
+    void continueBatch();
     bool isArchiveFile(const QString &filePath) const;
     void startProcessingFiles(const QList<FileToProcess> &files);
 
@@ -104,6 +99,8 @@ private:
     QList<FileToProcess> m_filesToProcess;
     int m_currentFileIndex = 0;
     bool m_waitingForModal = false;
+    bool m_cancelled = false;
+    CancelTokenPtr m_activeToken;
 };
 
 #endif // ADDMODMODALCONTENT_H

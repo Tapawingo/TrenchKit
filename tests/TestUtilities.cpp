@@ -12,7 +12,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QElapsedTimer>
+#include <QTimer>
 #include <QSignalSpy>
+#include <QThread>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -83,6 +86,15 @@ static QByteArray validPakBytes() {
     stream << quint32(PakFileReader::PakFooter::MAGIC) << quint32(3) << quint64(0) << quint64(0);
     bytes.append(QByteArray(20, '\0'));
     return bytes;
+}
+
+/// A valid pak of roughly @p fillerSize bytes.
+static QByteArray pakBytesOfSize(qsizetype fillerSize) {
+    return QByteArray(fillerSize, 'y') + validPakBytes().right(44);
+}
+
+static QStringList partFiles(const QString &dir) {
+    return QDir(dir).entryList({QStringLiteral("*.part")}, QDir::Files);
 }
 
 static QStringList extractDirs() {
@@ -299,6 +311,59 @@ private slots:
         }
     }
 
+    void testExtractAsyncDeliversOnCallingThread() {
+        QObject context;
+        bool finished = false;
+        bool success = false;
+        QThread *callbackThread = nullptr;
+        QString tempDir;
+
+        ArchiveExtractor::extractPakFilesAsync(fixture("mod_lzma.7z"), &context,
+            [&](const ArchiveExtractor::ExtractResult &result) {
+            finished = true;
+            success = result.success;
+            tempDir = result.tempDir;
+            callbackThread = QThread::currentThread();
+        });
+
+        QTRY_VERIFY_WITH_TIMEOUT(finished, 10000);
+        QVERIFY(success);
+        QCOMPARE(callbackThread, QThread::currentThread());
+        ArchiveExtractor::cleanupTempDir(tempDir);
+    }
+
+    void testExtractAsyncReportsFailures() {
+        QObject context;
+        bool finished = false;
+        bool success = true;
+        QString error;
+
+        ArchiveExtractor::extractPakFilesAsync(fixture("not_a_pak.pak"), &context,
+            [&](const ArchiveExtractor::ExtractResult &result) {
+            finished = true;
+            success = result.success;
+            error = result.error;
+        });
+
+        QTRY_VERIFY_WITH_TIMEOUT(finished, 10000);
+        QVERIFY(!success);
+        QVERIFY(!error.isEmpty());
+    }
+
+    void testExtractAsyncCleansUpWhenContextIsDestroyed() {
+        const QStringList before = extractDirs();
+
+        bool called = false;
+        auto *context = new QObject;
+        ArchiveExtractor::extractPakFilesAsync(fixture("mod_lzma.7z"), context,
+            [&](const ArchiveExtractor::ExtractResult &) { called = true; });
+        delete context;
+
+        QTest::qWait(300);
+        QVERIFY2(!called, "the callback must not run once its context is gone");
+        QTRY_COMPARE_WITH_TIMEOUT(extractDirs(), before, 5000);
+    }
+
     void testArchiveExtractorRejectsNonPakEntry() {
         QTemporaryDir tempDir;
         QVERIFY(tempDir.isValid());
@@ -416,7 +481,14 @@ private slots:
         const QString download = work.filePath("update_1_2.tmp");
         QVERIFY(QFile::copy(fixture(archiveName), download));
 
-        QVERIFY(manager.replaceModFromFile(mod.id, download, "2.0", "42"));
+        bool finished = false;
+        bool installed = false;
+        manager.replaceModFromFile(mod.id, download, "2.0", "42", QDateTime(), &manager, [&](bool ok) {
+            finished = true;
+            installed = ok;
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(finished, 10000);
+        QVERIFY(installed);
 
         const QByteArray stored = readAll((manager.getModsStoragePath() + "/" + mod.fileName));
         QCOMPARE(stored.size(), qsizetype(4444));
@@ -442,7 +514,14 @@ private slots:
         QVERIFY(writeAll(damaged, readAll(fixture("mod_lzma.7z")).left(150)));
 
         QSignalSpy errors(&manager, &ModManager::errorOccurred);
-        QVERIFY(!manager.replaceModFromFile(mod.id, damaged, "2.0", "42"));
+        bool finished = false;
+        bool installed = true;
+        manager.replaceModFromFile(mod.id, damaged, "2.0", "42", QDateTime(), &manager, [&](bool ok) {
+            finished = true;
+            installed = ok;
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(finished, 10000);
+        QVERIFY(!installed);
         QCOMPARE(errors.size(), 1);
         QCOMPARE(readAll((manager.getModsStoragePath() + "/" + mod.fileName)), before);
         QCOMPARE(manager.getMod(mod.id).version, QStringLiteral("1.0"));
@@ -492,14 +571,228 @@ private slots:
     }
 
     void testSolidArchiveIsExtractedAndCancelsMidEntry() {
-        // The archive holds 1 GiB of zeros ahead of the pak. libarchive's own skip of an entry this big
-        // makes the next one read back empty, so the extractor reads skipped entries block by block.
-        ArchiveExtractor extractor;
-        const auto result = extractor.extractPakFiles(fixture("mod_solid_bigfiller.7z"));
-        QVERIFY2(result.success, qPrintable(result.error));
-        QCOMPARE(result.pakFiles.size(), 1);
-        QCOMPARE(QFileInfo(result.pakFiles.first()).size(), qint64(4444));
-        ArchiveExtractor::cleanupTempDir(result.tempDir);
+        // The archive holds 1 GiB of zeros ahead of the pak. Skipping it means decoding all of it.
+        const QString path = fixture("mod_solid_bigfiller.7z");
+
+        QElapsedTimer full;
+        full.start();
+        {
+            ArchiveExtractor extractor;
+            const auto result = extractor.extractPakFiles(path);
+            QVERIFY2(result.success, qPrintable(result.error));
+            QCOMPARE(result.pakFiles.size(), 1);
+            // libarchive's own skip of an entry this big makes the next one read back empty.
+            QCOMPARE(QFileInfo(result.pakFiles.first()).size(), qint64(4444));
+            ArchiveExtractor::cleanupTempDir(result.tempDir);
+        }
+        const qint64 fullMs = full.elapsed();
+
+        QObject context;
+        bool finished = false;
+        bool wasCancelled = false;
+        qint64 finishedAt = 0;
+        QElapsedTimer clock;
+        clock.start();
+        const auto token = ArchiveExtractor::extractPakFilesAsync(path, &context,
+            [&](const ArchiveExtractor::ExtractResult &result) {
+            finished = true;
+            wasCancelled = result.cancelled;
+            finishedAt = clock.elapsed();
+        });
+
+        QTest::qWait(static_cast<int>(qMin<qint64>(150, fullMs / 4)));
+        const qint64 cancelledAt = clock.elapsed();
+        token->cancel();
+        QTRY_VERIFY_WITH_TIMEOUT(finished, 30000);
+
+        QVERIFY(wasCancelled);
+        // Without block-wise skipping the cancel would only be seen after the whole 1 GiB was decoded.
+        if (fullMs > 1000) {
+            QVERIFY2(finishedAt - cancelledAt < 500,
+                     qPrintable(QStringLiteral("stopped %1 ms after cancel (full extraction: %2 ms)")
+                                    .arg(finishedAt - cancelledAt).arg(fullMs)));
+        }
+    }
+
+    void testExtractorHonoursCancellation() {
+        CancelToken token;
+        token.cancel();
+
+        for (const QString &name : {QStringLiteral("mod_lzma.7z"), QStringLiteral("mod_stored.rar"),
+                                    QStringLiteral("mod.tar.gz"), QStringLiteral("mod_deflate.zip")}) {
+            ArchiveExtractor extractor;
+            const auto result = extractor.extractPakFiles(fixture(name), &token);
+            QVERIFY2(!result.success, qPrintable(name));
+            QVERIFY2(result.cancelled, qPrintable(name));
+            QVERIFY2(result.tempDir.isEmpty(), qPrintable(name));
+        }
+    }
+
+    void testModManagerAddModAsync() {
+        QTemporaryDir storage;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && work.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+
+        const QString pak = work.filePath("Async.pak");
+        QVERIFY(writeAll(pak, pakBytesOfSize(1 << 20)));
+
+        bool done = false;
+        bool added = false;
+        QThread *callbackThread = nullptr;
+        const auto token = manager.addModAsync(pak, {.name = "Async"}, &manager, [&](bool ok) {
+            done = true;
+            added = ok;
+            callbackThread = QThread::currentThread();
+        });
+        QVERIFY(token);
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+
+        QVERIFY(added);
+        QCOMPARE(callbackThread, QThread::currentThread());
+        QCOMPARE(int(manager.getMods().size()), 1);
+        QCOMPARE(readAll(storage.filePath("Async.pak")), readAll(pak));
+        QVERIFY(partFiles(storage.path()).isEmpty());
+    }
+
+    void testModManagerAddModAsyncReportsInvalidFilesAtOnce() {
+        QTemporaryDir storage;
+        QVERIFY(storage.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+        QSignalSpy errors(&manager, &ModManager::errorOccurred);
+
+        bool done = false;
+        bool added = true;
+        const auto token = manager.addModAsync(fixture("not_a_pak.pak"), {.name = "Fake"}, &manager, [&](bool ok) {
+            done = true;
+            added = ok;
+        });
+
+        QVERIFY2(done, "validation failures are reported before the call returns");
+        QVERIFY(!added);
+        QVERIFY(!token);
+        QCOMPARE(errors.size(), 1);
+        QVERIFY(manager.getMods().isEmpty());
+    }
+
+    void testModManagerAddModAsyncDroppedContextLeavesNothing() {
+        QTemporaryDir storage;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && work.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+
+        const QString pak = work.filePath("Gone.pak");
+        QVERIFY(writeAll(pak, pakBytesOfSize(8 << 20)));
+
+        bool called = false;
+        auto *context = new QObject;
+        manager.addModAsync(pak, {.name = "Gone"}, context, [&](bool) { called = true; });
+        delete context;
+
+        QTest::qWait(300);
+        QVERIFY2(!called, "the callback must not run once its context is gone");
+        QVERIFY(manager.getMods().isEmpty());
+        QVERIFY(!QFile::exists(storage.filePath("Gone.pak")));
+        QTRY_VERIFY_WITH_TIMEOUT(partFiles(storage.path()).isEmpty(), 5000);
+    }
+
+    void testModManagerAddModAsyncCancelStaysConsistent() {
+        QTemporaryDir storage;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && work.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+        QSignalSpy errors(&manager, &ModManager::errorOccurred);
+
+        const QString pak = work.filePath("Big.pak");
+        QVERIFY(writeAll(pak, pakBytesOfSize(64 << 20)));
+
+        bool done = false;
+        bool added = false;
+        const auto token = manager.addModAsync(pak, {.name = "Big"}, &manager, [&](bool ok) {
+            done = true;
+            added = ok;
+        });
+        QVERIFY(token);
+        token->cancel();
+        QTRY_VERIFY_WITH_TIMEOUT(done, 20000);
+
+        // Whether the cancel landed in time or not, the outcome must be all or nothing.
+        QCOMPARE(int(manager.getMods().size()), added ? 1 : 0);
+        QCOMPARE(QFile::exists(storage.filePath("Big.pak")), added);
+        QVERIFY(partFiles(storage.path()).isEmpty());
+        QCOMPARE(errors.size(), 0);
+    }
+
+    void testModManagerReplaceModAsync() {
+        QTemporaryDir storage;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && work.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+
+        const QString original = work.filePath("Fixture.pak");
+        QVERIFY(writeAll(original, validPakBytes()));
+        QVERIFY(manager.addMod(original, {.name = "Fixture", .version = "1.0"}));
+        const ModInfo mod = manager.getMods().first();
+
+        const QString update = work.filePath("Update.pak");
+        const QByteArray updateBytes = pakBytesOfSize(2 << 20);
+        QVERIFY(writeAll(update, updateBytes));
+
+        bool done = false;
+        bool replaced = false;
+        manager.replaceModAsync(mod.id, update, "2.0", "42", QDateTime(), &manager, [&](bool ok) {
+            done = true;
+            replaced = ok;
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+
+        QVERIFY(replaced);
+        QCOMPARE(readAll(storage.filePath(mod.fileName)), updateBytes);
+        QCOMPARE(manager.getMod(mod.id).version, QStringLiteral("2.0"));
+        QVERIFY(partFiles(storage.path()).isEmpty());
+    }
+
+    void testModManagerReplaceFromArchiveCancelStaysConsistent() {
+        QTemporaryDir storage;
+        QTemporaryDir work;
+        QVERIFY(storage.isValid() && work.isValid());
+        ModManager manager;
+        manager.setModsStoragePath(storage.path());
+
+        const QString original = work.filePath("Fixture.pak");
+        QVERIFY(writeAll(original, validPakBytes()));
+        QVERIFY(manager.addMod(original, {.name = "Fixture", .version = "1.0"}));
+        const ModInfo mod = manager.getMods().first();
+        const QStringList dirsBefore = extractDirs();
+        QSignalSpy errors(&manager, &ModManager::errorOccurred);
+
+        bool done = false;
+        bool replaced = false;
+        const auto token = manager.replaceModFromFile(mod.id, fixture("mod_lzma.7z"), "2.0", "42", QDateTime(),
+                                                      &manager, [&](bool ok) {
+            done = true;
+            replaced = ok;
+        });
+        QVERIFY(token);
+        token->cancel();
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+
+        const QByteArray stored = readAll(storage.filePath(mod.fileName));
+        if (replaced) {
+            QCOMPARE(stored.size(), qsizetype(4444));
+            QCOMPARE(manager.getMod(mod.id).version, QStringLiteral("2.0"));
+        } else {
+            QCOMPARE(stored, validPakBytes());
+            QCOMPARE(manager.getMod(mod.id).version, QStringLiteral("1.0"));
+            QCOMPARE(errors.size(), 0);
+        }
+        QVERIFY(partFiles(storage.path()).isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(extractDirs(), dirsBefore, 5000);
     }
 
     void testUpdateArchiveExtractorRejectsTruncatedArchive() {
@@ -554,6 +847,6 @@ private slots:
     }
 };
 
-QTEST_APPLESS_MAIN(TestUtilities)
+QTEST_GUILESS_MAIN(TestUtilities)
 
 #include "TestUtilities.moc"

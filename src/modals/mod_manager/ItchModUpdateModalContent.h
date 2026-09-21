@@ -5,6 +5,7 @@
 #ifndef ITCHMODUPDATEMODALCONTENT_H
 #define ITCHMODUPDATEMODALCONTENT_H
 
+#include "core/utils/CancelToken.h"
 #include "common/modals/BaseModalContent.h"
 #include "core/models/ModInfo.h"
 #include "core/models/ItchUpdateInfo.h"
@@ -62,6 +63,8 @@ private:
     QPushButton *m_cancelButton;
 
     QString m_downloadedPath;
+    CancelTokenPtr m_installToken;
+    bool m_cancelled = false;
 };
 
 #endif // ITCHMODUPDATEMODALCONTENT_H

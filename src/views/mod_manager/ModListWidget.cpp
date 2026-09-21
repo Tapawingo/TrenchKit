@@ -3,6 +3,7 @@
 #include "common/widgets/GradientFrame.h"
 #include "common/modals/ModalManager.h"
 #include "common/modals/MessageModal.h"
+#include "common/modals/ProgressModal.h"
 #include "common/modals/InputModal.h"
 #include "modals/mod_manager/AddModModalContent.h"
 #include "modals/mod_manager/ModMetadataModalContent.h"
@@ -28,6 +29,8 @@
 #include <QLabel>
 #include <QTimer>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QLineEdit>
@@ -1287,24 +1290,56 @@ void ModListWidget::onFilesDropped(const QStringList &filePaths) {
     }
 
     for (const QString &filePath : filePaths) {
-        if (filePath.endsWith(".pak", Qt::CaseInsensitive)) {
-            handlePakFile(filePath);
-        } else if (isArchiveFile(filePath)) {
-            handleArchiveFile(filePath);
+        if (filePath.endsWith(".pak", Qt::CaseInsensitive) || isArchiveFile(filePath)) {
+            m_dropQueue.append(filePath);
         }
+    }
+    if (!m_dropBusy) {
+        processNextDropped();
     }
 }
 
-void ModListWidget::handlePakFile(const QString &pakPath) {
+void ModListWidget::processNextDropped() {
+    if (m_dropQueue.isEmpty()) {
+        m_dropBusy = false;
+        return;
+    }
+
+    m_dropBusy = true;
+    const QString filePath = m_dropQueue.takeFirst();
+    const auto next = [this]() {
+        QTimer::singleShot(0, this, &ModListWidget::processNextDropped);
+    };
+
+    if (filePath.endsWith(".pak", Qt::CaseInsensitive)) {
+        handlePakFile(filePath, next);
+    } else {
+        handleArchiveFile(filePath, next);
+    }
+}
+
+void ModListWidget::handlePakFile(const QString &pakPath, std::function<void()> onDone) {
     QFileInfo fileInfo(pakPath);
     QString modName = fileInfo.completeBaseName();
 
-    if (!m_modManager->addMod(pakPath, {.name = modName})) {
-        MessageModal::warning(m_modalManager, "Error",
-                            "Failed to add mod: " + modName);
-    } else {
-        emit modAdded(modName);
-    }
+    // Released with the completion handler, or when the widget goes away first.
+    const std::shared_ptr<void> busyCursor(nullptr, [](void *) {
+        if (QGuiApplication::instance()) {
+            QGuiApplication::restoreOverrideCursor();
+        }
+    });
+    QGuiApplication::setOverrideCursor(Qt::BusyCursor);
+
+    m_modManager->addModAsync(pakPath, {.name = modName}, this,
+                              [this, modName, busyCursor, onDone = std::move(onDone)](bool added) {
+        if (!added) {
+            MessageModal::warning(m_modalManager, "Error",
+                                "Failed to add mod: " + modName);
+        } else {
+            emit modAdded(modName);
+        }
+        onDone();
+    });
 }
 
 bool ModListWidget::isArchiveFile(const QString &filePath) const {
@@ -1317,26 +1352,58 @@ bool ModListWidget::isArchiveFile(const QString &filePath) const {
            lower.endsWith(".tar.xz");
 }
 
-void ModListWidget::handleArchiveFile(const QString &archivePath) {
-    ArchiveExtractor extractor;
-    auto result = extractor.extractPakFiles(archivePath);
-
-    if (!result.success) {
-        MessageModal::warning(m_modalManager, "Error", result.error);
+void ModListWidget::addPaksSequentially(const QStringList &pakPaths, std::function<void()> onDone) {
+    if (pakPaths.isEmpty()) {
+        onDone();
         return;
     }
+    handlePakFile(pakPaths.first(), [this, rest = pakPaths.mid(1), onDone = std::move(onDone)]() {
+        addPaksSequentially(rest, onDone);
+    });
+}
 
-    if (result.pakFiles.isEmpty()) {
-        MessageModal::warning(m_modalManager, "Error",
-                            "No .pak files found in archive");
-        ArchiveExtractor::cleanupTempDir(result.tempDir);
-        return;
-    }
+void ModListWidget::handleArchiveFile(const QString &archivePath, std::function<void()> onDone) {
+    auto *progress = new ProgressModal(tr("Unpacking %1...").arg(QFileInfo(archivePath).fileName()),
+                                       tr("Cancel"), 0, 0);
+    m_modalManager->showModal(progress);
 
-    if (result.pakFiles.size() == 1) {
-        handlePakFile(result.pakFiles.first());
-        ArchiveExtractor::cleanupTempDir(result.tempDir);
-    } else {
+    // Clicking Cancel already closes the modal, so it must not be closed a second time.
+    const auto userCancelled = std::make_shared<bool>(false);
+
+    const CancelTokenPtr token = ArchiveExtractor::extractPakFilesAsync(archivePath, this,
+        [this, archivePath, progress = QPointer<ProgressModal>(progress), userCancelled, onDone](const ArchiveExtractor::ExtractResult &result) {
+        if (progress && !*userCancelled) {
+            progress->accept();
+        }
+
+        if (result.cancelled) {
+            ArchiveExtractor::cleanupTempDir(result.tempDir);
+            onDone();
+            return;
+        }
+
+        if (!result.success) {
+            MessageModal::warning(m_modalManager, "Error", result.error);
+            onDone();
+            return;
+        }
+
+        if (result.pakFiles.isEmpty()) {
+            MessageModal::warning(m_modalManager, "Error",
+                                "No .pak files found in archive");
+            ArchiveExtractor::cleanupTempDir(result.tempDir);
+            onDone();
+            return;
+        }
+
+        if (result.pakFiles.size() == 1) {
+            addPaksSequentially(result.pakFiles, [result, onDone]() {
+                ArchiveExtractor::cleanupTempDir(result.tempDir);
+                onDone();
+            });
+            return;
+        }
+
         QStringList fileNames;
         for (const QString &path : result.pakFiles) {
             fileNames.append(QFileInfo(path).fileName());
@@ -1346,28 +1413,36 @@ void ModListWidget::handleArchiveFile(const QString &archivePath) {
             fileNames, QFileInfo(archivePath).fileName(), true);
 
         connect(fileModal, &FileSelectionModalContent::accepted,
-                this, [this, result, fileModal]() {
-            QStringList selectedFileNames = fileModal->getSelectedFiles();
-
-            for (const QString &fileName : selectedFileNames) {
+                this, [this, result, fileModal, onDone]() {
+            QStringList selectedPaks;
+            for (const QString &fileName : fileModal->getSelectedFiles()) {
                 for (const QString &path : result.pakFiles) {
                     if (QFileInfo(path).fileName() == fileName) {
-                        handlePakFile(path);
+                        selectedPaks.append(path);
                         break;
                     }
                 }
             }
 
-            ArchiveExtractor::cleanupTempDir(result.tempDir);
+            addPaksSequentially(selectedPaks, [result, onDone]() {
+                ArchiveExtractor::cleanupTempDir(result.tempDir);
+                onDone();
+            });
         });
 
         connect(fileModal, &FileSelectionModalContent::rejected,
-                this, [result]() {
+                this, [result, onDone]() {
             ArchiveExtractor::cleanupTempDir(result.tempDir);
+            onDone();
         });
 
         m_modalManager->showModal(fileModal);
-    }
+    });
+
+    connect(progress, &ProgressModal::canceled, this, [token, userCancelled]() {
+        *userCancelled = true;
+        token->cancel();
+    });
 }
 
 void ModListWidget::onConflictScanComplete(QMap<QString, ConflictInfo> conflicts) {

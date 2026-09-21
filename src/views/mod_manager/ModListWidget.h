@@ -16,6 +16,7 @@
 #include <QCheckBox>
 #include <QStringList>
 #include <QUrl>
+#include <functional>
 
 class NexusModsClient;
 class NexusModsAuth;
@@ -129,8 +130,11 @@ private:
                                const QString &itchGameId, const QString &author,
                                const QString &itchUrl);
     QString extractVersionFromFilename(const QString &filename) const;
-    void handlePakFile(const QString &pakPath);
-    void handleArchiveFile(const QString &archivePath);
+    /// Dropped files are handled one after another; each handler calls @p onDone when it is finished.
+    void processNextDropped();
+    void handlePakFile(const QString &pakPath, std::function<void()> onDone);
+    void handleArchiveFile(const QString &archivePath, std::function<void()> onDone);
+    void addPaksSequentially(const QStringList &pakPaths, std::function<void()> onDone);
     bool isArchiveFile(const QString &filePath) const;
     void hideSearch(bool clearFilter);
     void updateDragMode();
@@ -161,6 +165,8 @@ private:
     bool m_updating = false;
     int m_pendingUpdateChecks = 0;
     int m_totalUpdatesFound = 0;
+    QStringList m_dropQueue;
+    bool m_dropBusy = false;
 };
 
 #endif // MODLISTWIDGET_H

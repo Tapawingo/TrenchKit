@@ -111,26 +111,40 @@ void ModUpdateModalContent::onDownloadProgress(qint64 received, qint64 total) {
 }
 
 void ModUpdateModalContent::onDownloadFinished(const QString &savePath) {
-    m_downloadedPath = savePath;
+    installFile(savePath, true);
+}
+
+void ModUpdateModalContent::installFile(const QString &filePath, bool deleteWhenDone) {
+    m_downloadedPath = filePath;
     m_statusLabel->setText(tr("Installing update..."));
-    m_progressBar->setValue(100);
+    m_progressBar->setRange(0, 0);
 
-    if (!m_modManager->replaceModFromFile(m_mod.id, savePath,
-                                  m_updateInfo.availableVersion,
-                                  m_updateInfo.availableFileId)) {
-        QFile::remove(savePath);
-        MessageModal::critical(m_modalManager, tr("Error"), tr("Failed to install mod update"));
-        reject();
-        return;
-    }
+    m_installToken = m_modManager->replaceModFromFile(m_mod.id, filePath,
+                                     m_updateInfo.availableVersion,
+                                     m_updateInfo.availableFileId,
+                                     QDateTime(), this,
+                                     [this, filePath, deleteWhenDone](bool installed) {
+        if (deleteWhenDone) {
+            QFile::remove(filePath);
+        }
+        if (m_cancelled) {
+            return;
+        }
+        m_progressBar->setRange(0, 100);
+        m_progressBar->setValue(100);
 
-    QFile::remove(savePath);
+        if (!installed) {
+            MessageModal::critical(m_modalManager, tr("Error"), tr("Failed to install mod update"));
+            reject();
+            return;
+        }
 
-    m_statusLabel->setText(tr("Update complete!"));
-    MessageModal::information(m_modalManager, tr("Success"),
-                             tr("Mod updated successfully to version %1")
-                                 .arg(m_updateInfo.availableVersion));
-    accept();
+        m_statusLabel->setText(tr("Update complete!"));
+        MessageModal::information(m_modalManager, tr("Success"),
+                                 tr("Mod updated successfully to version %1")
+                                     .arg(m_updateInfo.availableVersion));
+        accept();
+    });
 }
 
 void ModUpdateModalContent::onError(const QString &error) {
@@ -174,23 +188,7 @@ void ModUpdateModalContent::onError(const QString &error) {
                         );
 
                         if (!filePath.isEmpty()) {
-                            m_downloadedPath = filePath;
-                            m_statusLabel->setText(tr("Installing update..."));
-                            m_progressBar->setValue(100);
-
-                            if (!m_modManager->replaceModFromFile(m_mod.id, filePath,
-                                                          m_updateInfo.availableVersion,
-                                                          m_updateInfo.availableFileId)) {
-                                MessageModal::critical(m_modalManager, tr("Error"), tr("Failed to install mod update"));
-                                reject();
-                                return;
-                            }
-
-                            m_statusLabel->setText(tr("Update complete!"));
-                            MessageModal::information(m_modalManager, tr("Success"),
-                                                     tr("Mod updated successfully to version %1")
-                                                         .arg(m_updateInfo.availableVersion));
-                            accept();
+                            installFile(filePath, false);
                         } else {
                             reject();
                         }
@@ -213,6 +211,10 @@ void ModUpdateModalContent::onError(const QString &error) {
 }
 
 void ModUpdateModalContent::onCancelClicked() {
+    m_cancelled = true;
+    if (m_installToken) {
+        m_installToken->cancel();
+    }
     m_nexusClient->cancelDownload();
     reject();
 }

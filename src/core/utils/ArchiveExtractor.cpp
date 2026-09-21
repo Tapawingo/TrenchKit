@@ -1,4 +1,5 @@
 #include "ArchiveExtractor.h"
+#include "AsyncRunner.h"
 #include "PakFileReader.h"
 #include "Rar5StoredCrc.h"
 #include <QDir>
@@ -144,7 +145,7 @@ QString uniqueDestPath(const QString &dir, const QString &baseName) {
 } // namespace
 
 ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
-    const QString &archivePath) {
+    const QString &archivePath, const CancelToken *cancel) {
 
     qDebug() << "ArchiveExtractor: extractWithLibarchive called for:" << archivePath;
 
@@ -192,20 +193,27 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         return {false, {}, "", error};
     };
 
+    const auto cancelled = [&]() -> ExtractResult {
+        discardOutput();
+        return {false, {}, "", "Cancelled", true};
+    };
+
     // Skipping an entry decodes it whenever the data is compressed together with other entries (solid
     // RAR, 7z) or sits behind a stream filter (tar.*); only zip and non-solid RAR can seek past it.
-    // Such entries are read block by block: libarchive's own skip mis-reads the entry that follows a
-    // very large one in a solid 7z.
+    // Such entries are read block by block so a cancel can interrupt them.
     const ArchiveFormat format = detectFormat(archivePath);
     const bool skipDecodes = format != ArchiveFormat::Zip
                              && !(format == ArchiveFormat::Rar && !isSolidRar(archivePath));
 
-    enum class SkipResult { Done, Failed };
+    enum class SkipResult { Done, Cancelled, Failed };
     const auto skipEntry = [&]() {
         if (!skipDecodes) {
             return archive_read_data_skip(a.get()) < ARCHIVE_WARN ? SkipResult::Failed : SkipResult::Done;
         }
         for (;;) {
+            if (cancel && cancel->isCancelled()) {
+                return SkipResult::Cancelled;
+            }
             const void *buff = nullptr;
             size_t size = 0;
             int64_t offset = 0;
@@ -224,6 +232,9 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
     struct archive_entry *entry = nullptr;
 
     for (;;) {
+        if (cancel && cancel->isCancelled()) {
+            return cancelled();
+        }
         const int headerResult = archive_read_next_header(a.get(), &entry);
         if (headerResult == ARCHIVE_EOF) {
             break;
@@ -245,6 +256,8 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         const std::optional<quint32> expectedCrc = isRegular ? storedCrcs.take(fileName) : std::nullopt;
         if (!isRegular || !isPakFile(fileName)) {
             switch (skipEntry()) {
+            case SkipResult::Cancelled:
+                return cancelled();
             case SkipResult::Failed:
                 return fail(QString("Failed to read archive contents: %1").arg(libarchiveError(a.get())));
             case SkipResult::Done:
@@ -268,6 +281,9 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
         qint64 totalBytes = 0;
         Crc32 crc;
         for (;;) {
+            if (cancel && cancel->isCancelled()) {
+                return cancelled();
+            }
             const void *buff = nullptr;
             size_t size = 0;
             int64_t offset = 0;
@@ -326,20 +342,20 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithLibarchive(
 }
 
 ArchiveExtractor::ExtractResult ArchiveExtractor::extractPakFiles(
-    const QString &archivePath) {
+    const QString &archivePath, const CancelToken *cancel) {
 
     qDebug() << "ArchiveExtractor: extractPakFiles called for:" << archivePath;
 
     ArchiveFormat format = detectFormat(archivePath);
 
     if (format == ArchiveFormat::Zip) {
-        ExtractResult result = extractWithLibarchive(archivePath);
-        if (result.success) {
+        ExtractResult result = extractWithLibarchive(archivePath, cancel);
+        if (result.success || result.cancelled) {
             return result;
         }
 
         qDebug() << "ArchiveExtractor: libarchive failed for zip, trying zip library:" << result.error;
-        ExtractResult fallback = extractWithZip(archivePath);
+        ExtractResult fallback = extractWithZip(archivePath, cancel);
         if (!fallback.success) {
             fallback.error = QString("%1 (fallback: %2)").arg(result.error, fallback.error);
         }
@@ -348,7 +364,20 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractPakFiles(
     if (format == ArchiveFormat::Unknown) {
         return {false, {}, "", "Unknown or unsupported archive format"};
     }
-    return extractWithLibarchive(archivePath);
+    return extractWithLibarchive(archivePath, cancel);
+}
+
+CancelTokenPtr ArchiveExtractor::extractPakFilesAsync(const QString &archivePath, QObject *context,
+                                                      ExtractCallback onFinished, CancelTokenPtr token) {
+    return runCancellable<ExtractResult>(
+        context,
+        [archivePath](const CancelToken &cancel) {
+            ArchiveExtractor extractor;
+            return extractor.extractPakFiles(archivePath, &cancel);
+        },
+        std::move(onFinished),
+        [](const ExtractResult &result) { cleanupTempDir(result.tempDir); },
+        std::move(token));
 }
 
 bool ArchiveExtractor::isArchiveFile(const QString &filePath) {
@@ -356,7 +385,7 @@ bool ArchiveExtractor::isArchiveFile(const QString &filePath) {
     return extractor.detectFormat(filePath) != ArchiveFormat::Unknown;
 }
 
-ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithZip(const QString &zipPath) {
+ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithZip(const QString &zipPath, const CancelToken *cancel) {
     QFileInfo zipInfo(zipPath);
     if (!zipInfo.exists() || !zipInfo.isFile()) {
         return {false, {}, "", "Archive file does not exist"};
@@ -380,6 +409,11 @@ ArchiveExtractor::ExtractResult ArchiveExtractor::extractWithZip(const QString &
     const int totalEntries = static_cast<int>(zip_entries_total(zip));
 
     for (int i = 0; i < totalEntries && failure.isEmpty(); ++i) {
+        if (cancel && cancel->isCancelled()) {
+            zip_close(zip);
+            cleanupTempDir(tempDir);
+            return {false, {}, "", "Cancelled", true};
+        }
         if (zip_entry_openbyindex(zip, i) < 0) {
             failure = QString("Failed to read archive entry %1").arg(i);
             break;
