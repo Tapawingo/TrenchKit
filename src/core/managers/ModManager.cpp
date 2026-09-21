@@ -1468,6 +1468,24 @@ void ModManager::renumberEnabledMods() {
             continue;
         }
 
+        // The pak is already in the paks folder: renaming keeps the bytes and avoids copying it again.
+        if (!mod.numberedFileName.isEmpty()) {
+            const QString oldPath = paksPath + "/" + mod.numberedFileName;
+            if (QFile::exists(oldPath) && !QFile::exists(expectedPath) && QFile::rename(oldPath, expectedPath)) {
+                if (!mod.fileName.isEmpty() && mod.fileName != newNumberedName) {
+                    QFile::remove(paksPath + "/" + mod.fileName);
+                }
+                QMutexLocker locker(&m_modsMutex);
+                auto it = std::ranges::find_if(m_mods,
+                                       [&mod](const ModInfo &item) { return item.id == mod.id; });
+                if (it != m_mods.end()) {
+                    it->numberedFileName = newNumberedName;
+                }
+                qDebug() << "Renamed mod:" << mod.numberedFileName << "->" << newNumberedName;
+                continue;
+            }
+        }
+
         if (!mod.fileName.isEmpty() && mod.fileName != newNumberedName) {
             QString originalPath = paksPath + "/" + mod.fileName;
             if (QFile::exists(originalPath)) {
