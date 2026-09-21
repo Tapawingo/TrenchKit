@@ -1,5 +1,6 @@
 #include "ProfileManager.h"
 #include "ModManager.h"
+#include <QPointer>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -515,6 +516,45 @@ bool ProfileManager::applyProfile(const QString &profileId, bool ignoreWarnings)
     }
 
     return success;
+}
+
+CancelTokenPtr ProfileManager::applyProfileAsync(const QString &profileId, bool ignoreWarnings, QObject *context,
+                                                 std::function<void(bool)> onFinished) {
+    const auto fail = [&](const QString &message) {
+        emit errorOccurred(message);
+        onFinished(false);
+        return CancelTokenPtr();
+    };
+
+    if (!m_modManager) {
+        return fail("ModManager not set");
+    }
+
+    ProfileInfo profile = getProfile(profileId);
+    if (profile.id.isEmpty()) {
+        qWarning() << "Profile not found:" << profileId;
+        return fail(tr("Profile not found."));
+    }
+
+    if (!ignoreWarnings && validateProfile(profileId).hasMissingMods()) {
+        return fail("Cannot apply profile: some mods are missing. Use validation to see details.");
+    }
+
+    const QStringList idsToEnable = prepareProfile(profile);
+
+    QPointer<ProfileManager> self(this);
+    return m_modManager->setModsEnabledAsync(idsToEnable, true, context,
+        [self, profileId, name = profile.name, onFinished = std::move(onFinished)](const ModManager::EnableOutcome &outcome) {
+        // Mods that could not be enabled were already reported; like applyProfile() the profile still counts as applied.
+        if (!self || outcome.cancelled) {
+            onFinished(false);
+            return;
+        }
+        self->setActiveProfile(profileId);
+        emit self->profileApplied(profileId);
+        qDebug() << "Applied profile:" << name;
+        onFinished(true);
+    });
 }
 
 bool ProfileManager::exportProfile(const QString &profileId, const QString &filePath) {
@@ -1100,6 +1140,15 @@ bool ProfileManager::applyProfileInternal(const ProfileInfo &profile) {
         return false;
     }
 
+    const QStringList idsToEnable = prepareProfile(profile);
+    for (const QString &modId : idsToEnable) {
+        m_modManager->enableMod(modId);
+    }
+
+    return true;
+}
+
+QStringList ProfileManager::prepareProfile(const ProfileInfo &profile) {
     QList<ModInfo> allMods = m_modManager->getMods();
     for (const ModInfo &mod : allMods) {
         if (mod.enabled) {
@@ -1114,11 +1163,11 @@ bool ProfileManager::applyProfileInternal(const ProfileInfo &profile) {
 
     m_modManager->batchSetModPriorities(priorityMap);
 
+    QStringList idsToEnable;
     for (const ModConfig &config : profile.modConfigs) {
         if (config.enabled) {
-            m_modManager->enableMod(config.modId);
+            idsToEnable.append(config.modId);
         }
     }
-
-    return true;
+    return idsToEnable;
 }

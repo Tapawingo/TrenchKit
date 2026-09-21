@@ -5,6 +5,7 @@
 #ifndef PROFILEMANAGER_H
 #define PROFILEMANAGER_H
 
+#include "core/utils/CancelToken.h"
 #include "core/models/ProfileInfo.h"
 #include "core/models/ModInfo.h"
 #include <QObject>
@@ -78,6 +79,7 @@ public:
      * @brief Injects the ModManager used to read and apply mod state.
      */
     void setModManager(ModManager *modManager);
+    [[nodiscard]] ModManager *modManager() const { return m_modManager; }
     /**
      * @brief Sets the directory where profile files are stored.
      */
@@ -117,6 +119,17 @@ public:
      * @param ignoreWarnings  If true, applies even when some mods are missing.
      */
     bool applyProfile(const QString &profileId, bool ignoreWarnings = false);
+
+    /**
+     * @brief Like @c applyProfile(), but copies the paks of the mods to enable on a worker thread.
+     *
+     * Problems found up front are reported at once (@p onFinished(false) before this returns, null result).
+     * Otherwise @p onFinished receives the outcome on the calling thread, and not at all if @p context
+     * is destroyed first. A cancelled apply leaves the mods partly switched and the profile not active.
+     * @returns A token that cancels the copying.
+     */
+    CancelTokenPtr applyProfileAsync(const QString &profileId, bool ignoreWarnings, QObject *context,
+                                     std::function<void(bool)> onFinished);
 
     /**
      * @brief Exports a profile to a .tkprofile archive file.
@@ -160,6 +173,8 @@ private:
     QString getStorageFilePath() const;
     ProfileInfo captureCurrentState() const;
     bool applyProfileInternal(const ProfileInfo &profile);
+    /// Disables every mod and applies the profile's load order; returns the ids the profile wants enabled.
+    QStringList prepareProfile(const ProfileInfo &profile);
 
     ModManager *m_modManager = nullptr;
     QString m_storagePath;

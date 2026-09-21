@@ -97,6 +97,35 @@ static QStringList partFiles(const QString &dir) {
     return QDir(dir).entryList({QStringLiteral("*.part")}, QDir::Files);
 }
 
+/// A mod library plus a fake Foxhole install with an empty paks folder.
+struct ModLibrary {
+    QTemporaryDir storage;
+    QTemporaryDir install;
+    QTemporaryDir work;
+    ModManager manager;
+
+    ModLibrary() {
+        manager.setModsStoragePath(storage.path());
+        QDir().mkpath(paksPath());
+        manager.setInstallPath(install.path());
+    }
+
+    QString paksPath() const { return install.filePath("War/Content/Paks"); }
+
+    /// Adds a mod (not enabled) and returns its id.
+    QString addMod(const QString &name, const QByteArray &bytes) {
+        const QString source = work.filePath(name + ".pak");
+        if (!writeAll(source, bytes) || !manager.addMod(source, {.name = name})) {
+            return QString();
+        }
+        return manager.getMods().last().id;
+    }
+
+    QStringList paksFiles(const QString &pattern = QStringLiteral("*")) const {
+        return QDir(paksPath()).entryList({pattern}, QDir::Files);
+    }
+};
+
 static QStringList extractDirs() {
     return QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
         .entryList({QStringLiteral("TrenchKit_extract_*")}, QDir::Dirs | QDir::NoDotAndDotDot);
@@ -807,6 +836,195 @@ private slots:
         }
         QVERIFY(partFiles(storage.path()).isEmpty());
         QTRY_COMPARE_WITH_TIMEOUT(extractDirs(), dirsBefore, 5000);
+    }
+
+    void testEnableModsAsync() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QByteArray bytesA = pakBytesOfSize(1 << 20);
+        const QByteArray bytesB = pakBytesOfSize(3 << 20);
+        const QString idA = lib.addMod("Alpha", bytesA);
+        const QString idB = lib.addMod("Bravo", bytesB);
+        QVERIFY(!idA.isEmpty() && !idB.isEmpty());
+
+        QSignalSpy enabledSignals(&lib.manager, &ModManager::modEnabled);
+        QSignalSpy progress(&lib.manager, &ModManager::enableProgress);
+        QSignalSpy errors(&lib.manager, &ModManager::errorOccurred);
+
+        bool done = false;
+        ModManager::EnableOutcome outcome;
+        QThread *callbackThread = nullptr;
+        const auto token = lib.manager.setModsEnabledAsync({idA, idB}, true, &lib.manager,
+            [&](const ModManager::EnableOutcome &result) {
+            done = true;
+            outcome = result;
+            callbackThread = QThread::currentThread();
+        });
+        QVERIFY(token);
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+
+        QVERIFY(outcome.ok());
+        QCOMPARE(outcome.enabled, 2);
+        QCOMPARE(callbackThread, QThread::currentThread());
+        QCOMPARE(enabledSignals.size(), 2);
+        QCOMPARE(errors.size(), 0);
+        QVERIFY(!progress.isEmpty());
+        QCOMPARE(progress.last().at(0).toInt(), 2);
+        QCOMPARE(progress.last().at(1).toInt(), 2);
+
+        const ModInfo a = lib.manager.getMod(idA);
+        const ModInfo b = lib.manager.getMod(idB);
+        QVERIFY(a.enabled && b.enabled);
+        QCOMPARE(readAll(lib.paksPath() + "/" + a.numberedFileName), bytesA);
+        QCOMPARE(readAll(lib.paksPath() + "/" + b.numberedFileName), bytesB);
+        QCOMPARE(lib.paksFiles().size(), 2);
+        QVERIFY(lib.paksFiles("*.part").isEmpty());
+    }
+
+    void testEnableModsAsyncReportsFailuresAndKeepsTheRest() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QString good = lib.addMod("Good", pakBytesOfSize(1 << 20));
+        const QString broken = lib.addMod("Broken", pakBytesOfSize(1 << 20));
+        QVERIFY(QFile::remove(lib.storage.filePath(lib.manager.getMod(broken).fileName)));
+        QSignalSpy errors(&lib.manager, &ModManager::errorOccurred);
+
+        bool done = false;
+        ModManager::EnableOutcome outcome;
+        lib.manager.setModsEnabledAsync({broken, good}, true, &lib.manager,
+                                        [&](const ModManager::EnableOutcome &result) {
+            done = true;
+            outcome = result;
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+
+        QVERIFY(!outcome.ok());
+        QCOMPARE(outcome.enabled, 1);
+        QCOMPARE(outcome.failed, 1);
+        QCOMPARE(errors.size(), 1);
+        QVERIFY(lib.manager.getMod(good).enabled);
+        QVERIFY(!lib.manager.getMod(broken).enabled);
+        QCOMPARE(lib.paksFiles().size(), 1);
+    }
+
+    void testEnableModsAsyncWithoutPaksFolderFails() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QString id = lib.addMod("Solo", pakBytesOfSize(1 << 16));
+        QVERIFY(QDir(lib.paksPath()).removeRecursively());
+        QSignalSpy errors(&lib.manager, &ModManager::errorOccurred);
+
+        bool done = false;
+        ModManager::EnableOutcome outcome;
+        lib.manager.setModsEnabledAsync({id}, true, &lib.manager, [&](const ModManager::EnableOutcome &result) {
+            done = true;
+            outcome = result;
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+
+        QCOMPARE(outcome.failed, 1);
+        QCOMPARE(outcome.enabled, 0);
+        QCOMPARE(errors.size(), 1);
+        QVERIFY(!lib.manager.getMod(id).enabled);
+    }
+
+    void testEnableModsAsyncCancelStaysConsistent() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        QStringList ids;
+        for (const QString &name : {QStringLiteral("One"), QStringLiteral("Two"), QStringLiteral("Three")}) {
+            ids << lib.addMod(name, pakBytesOfSize(48 << 20));
+        }
+        QSignalSpy errors(&lib.manager, &ModManager::errorOccurred);
+
+        bool done = false;
+        ModManager::EnableOutcome outcome;
+        const auto token = lib.manager.setModsEnabledAsync(ids, true, &lib.manager,
+            [&](const ModManager::EnableOutcome &result) {
+            done = true;
+            outcome = result;
+        });
+        QVERIFY(token);
+        token->cancel();
+        QTRY_VERIFY_WITH_TIMEOUT(done, 20000);
+
+        // Whatever the cancel caught, state and the paks folder must agree, with nothing half-written.
+        int enabledMods = 0;
+        for (const QString &id : ids) {
+            const ModInfo mod = lib.manager.getMod(id);
+            QCOMPARE(QFile::exists(lib.paksPath() + "/" + mod.numberedFileName) && mod.enabled, mod.enabled);
+            enabledMods += mod.enabled ? 1 : 0;
+        }
+        QCOMPARE(lib.paksFiles().size(), enabledMods);
+        QCOMPARE(outcome.enabled, enabledMods);
+        QVERIFY(lib.paksFiles("*.part").isEmpty());
+        QCOMPARE(errors.size(), 0);
+        if (enabledMods < ids.size()) {
+            QVERIFY(outcome.cancelled);
+        }
+    }
+
+    void testEnableJobsRunOneAfterAnother() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QString id = lib.addMod("Queued", pakBytesOfSize(8 << 20));
+
+        QList<int> enabledCounts;
+        for (int i = 0; i < 2; ++i) {
+            lib.manager.setModsEnabledAsync({id}, true, &lib.manager, [&](const ModManager::EnableOutcome &result) {
+                enabledCounts.append(result.enabled);
+            });
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(enabledCounts.size(), 2, 10000);
+
+        QCOMPARE(enabledCounts, (QList<int>{1, 0}));
+        QVERIFY(lib.manager.getMod(id).enabled);
+        QCOMPARE(lib.paksFiles().size(), 1);
+    }
+
+    void testEnableJobFinishesEvenIfItsContextIsDestroyed() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QString id = lib.addMod("Orphan", pakBytesOfSize(8 << 20));
+
+        bool called = false;
+        auto *context = new QObject;
+        lib.manager.setModsEnabledAsync({id}, true, context, [&](const ModManager::EnableOutcome &) { called = true; });
+        delete context;
+
+        QTRY_VERIFY_WITH_TIMEOUT(lib.manager.getMod(id).enabled, 10000);
+        QVERIFY2(!called, "the callback must not run once its context is gone");
+        QVERIFY(QFile::exists(lib.paksPath() + "/" + lib.manager.getMod(id).numberedFileName));
+        QVERIFY(lib.paksFiles("*.part").isEmpty());
+    }
+
+    void testReplaceModAsyncKeepsAnEnabledModEnabled() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QString id = lib.addMod("Live", validPakBytes());
+        QVERIFY(lib.manager.enableMod(id));
+        QVERIFY(lib.manager.getMod(id).enabled);
+
+        const QByteArray updateBytes = pakBytesOfSize(4 << 20);
+        const QString update = lib.work.filePath("LiveUpdate.pak");
+        QVERIFY(writeAll(update, updateBytes));
+
+        bool done = false;
+        bool replaced = false;
+        lib.manager.replaceModAsync(id, update, "2.0", "42", QDateTime(), &lib.manager, [&](bool ok) {
+            done = true;
+            replaced = ok;
+        });
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+
+        QVERIFY(replaced);
+        const ModInfo mod = lib.manager.getMod(id);
+        QVERIFY2(mod.enabled, "an enabled mod must be enabled again once the update is installed");
+        QCOMPARE(mod.version, QStringLiteral("2.0"));
+        QCOMPARE(readAll(lib.storage.filePath(mod.fileName)), updateBytes);
+        QCOMPARE(readAll(lib.paksPath() + "/" + mod.numberedFileName), updateBytes);
+        QCOMPARE(lib.paksFiles().size(), 1);
+        QVERIFY(lib.paksFiles("*.part").isEmpty());
     }
 
     void testUpdateArchiveExtractorRejectsTruncatedArchive() {

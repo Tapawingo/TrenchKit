@@ -15,6 +15,7 @@
 #include <QElapsedTimer>
 #include <QPointer>
 #include <QEvent>
+#include <functional>
 
 class QAction;
 class QToolButton;
@@ -65,6 +66,8 @@ private:
     QString getFoxholeExecutablePath() const;
     void onGamePollTimeout();
     void restoreDisabledMods();
+    /// Re-enables @p modIds in the background; @p onDone receives how many ended up enabled.
+    void restoreMods(const QStringList &modIds, std::function<void(int)> onDone);
     void cancelWaitingForGameStart();
     void startGamePolling();
     bool isGameRunning() const;

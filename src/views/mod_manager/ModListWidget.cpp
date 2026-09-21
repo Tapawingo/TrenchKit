@@ -4,6 +4,7 @@
 #include "common/modals/ModalManager.h"
 #include "common/modals/MessageModal.h"
 #include "common/modals/ProgressModal.h"
+#include "ModEnableProgress.h"
 #include "common/modals/InputModal.h"
 #include "modals/mod_manager/AddModModalContent.h"
 #include "modals/mod_manager/ModMetadataModalContent.h"
@@ -485,11 +486,49 @@ void ModListWidget::onModEnabledChanged(const QString &modId, bool enabled) {
         return;
     }
 
+    // The row flips as soon as it is clicked; while its pak is still being copied the click is ignored.
+    if (m_enablingIds.contains(modId)) {
+        return;
+    }
+
     if (enabled) {
-        m_modManager->enableMod(modId);
+        enableModsInBackground({modId});
     } else {
         m_modManager->disableMod(modId);
     }
+}
+
+void ModListWidget::enableModsInBackground(const QStringList &modIds, std::function<void()> onDone) {
+    QStringList pending;
+    for (const QString &id : modIds) {
+        if (!m_enablingIds.contains(id)) {
+            pending.append(id);
+        }
+    }
+    if (pending.isEmpty()) {
+        if (onDone) {
+            onDone();
+        }
+        return;
+    }
+    for (const QString &id : std::as_const(pending)) {
+        m_enablingIds.insert(id);
+    }
+
+    ModEnableProgress::run(m_modManager, m_modalManager, static_cast<int>(pending.size()), tr("Enabling mods..."),
+        [this, pending, onDone](ModEnableProgress::Done done) {
+        return m_modManager->setModsEnabledAsync(pending, true, this,
+            [this, pending, onDone, done](const ModManager::EnableOutcome &) {
+            done();
+            for (const QString &id : pending) {
+                m_enablingIds.remove(id);
+            }
+            refreshModList();
+            if (onDone) {
+                onDone();
+            }
+        });
+    });
 }
 
 void ModListWidget::onEnableAllClicked() {
@@ -511,8 +550,24 @@ void ModListWidget::onEnableAllClicked() {
 
     bool enableAll = enabledCount < mods.size();
     m_enableAllCheckBox->setEnabled(false);
-    m_modManager->setAllModsEnabled(enableAll);
-    m_enableAllCheckBox->setEnabled(true);
+    if (!enableAll) {
+        m_modManager->setAllModsEnabled(false);
+        m_enableAllCheckBox->setEnabled(true);
+        return;
+    }
+
+    QStringList idsToEnable;
+    for (const ModInfo &mod : mods) {
+        if (!mod.enabled) {
+            idsToEnable.append(mod.id);
+        }
+    }
+    QPointer<QCheckBox> checkBox(m_enableAllCheckBox);
+    enableModsInBackground(idsToEnable, [checkBox]() {
+        if (checkBox) {
+            checkBox->setEnabled(true);
+        }
+    });
 }
 
 void ModListWidget::onAddModClicked() {
@@ -911,7 +966,7 @@ void ModListWidget::showSelectionContextMenu(const QPoint &globalPos) {
         }
 
         if (selectedAction == enableSelected) {
-            m_modManager->setModsEnabled(modIds, true);
+            enableModsInBackground(modIds);
         } else if (selectedAction == disableSelected) {
             m_modManager->setModsEnabled(modIds, false);
         } else if (selectedAction == registerNexus) {
@@ -941,7 +996,7 @@ void ModListWidget::showSelectionContextMenu(const QPoint &globalPos) {
     }
 
     if (selectedAction == enableSelected) {
-        m_modManager->setModsEnabled(modIds, true);
+        enableModsInBackground(modIds);
     } else if (selectedAction == disableSelected) {
         m_modManager->setModsEnabled(modIds, false);
     } else if (selectedAction == registerNexus) {

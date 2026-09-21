@@ -1,5 +1,6 @@
 #include "ModManager.h"
 #include <algorithm>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -11,6 +12,8 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QSet>
+#include <QTimer>
+#include <atomic>
 #include "core/utils/ArchiveExtractor.h"
 #include "core/utils/AsyncRunner.h"
 #include "core/utils/ModManifestReader.h"
@@ -379,7 +382,8 @@ bool ModManager::prepareReplace(const QString &modId, const QString &newPakPath,
     return true;
 }
 
-bool ModManager::finishReplace(const PendingReplace &pending, const StagedPak &staged) {
+bool ModManager::finishReplace(const PendingReplace &pending, const StagedPak &staged, bool deferReenable,
+                               bool *needsReenable) {
     if (!staged.ok) {
         QFile::remove(pending.stagedPath);
         if (!staged.cancelled) {
@@ -469,7 +473,11 @@ bool ModManager::finishReplace(const PendingReplace &pending, const StagedPak &s
     }
 
     if (wasEnabled) {
-        if (!enableMod(modId)) {
+        if (deferReenable) {
+            if (needsReenable) {
+                *needsReenable = true;
+            }
+        } else if (!enableMod(modId)) {
             emit errorOccurred(tr("Failed to re-enable mod after replacement"));
         }
     }
@@ -510,12 +518,28 @@ CancelTokenPtr ModManager::replaceStaged(const QString &modId, const QString &ne
         [pending](const CancelToken &cancel) {
             return stagePak(pending->sourcePath, pending->stagedPath, &cancel);
         },
-        [self, pending, keepAlive, onFinished = std::move(onFinished)](const StagedPak &staged) {
+        [self, pending, keepAlive, context = QPointer<QObject>(context),
+         onFinished = std::move(onFinished)](const StagedPak &staged) {
             if (!self) {
                 QFile::remove(pending->stagedPath);
                 return;
             }
-            onFinished(self->finishReplace(*pending, staged));
+
+            // Re-enabling copies the pak into the game folder again; that runs in the background too.
+            bool needsReenable = false;
+            const bool replaced = self->finishReplace(*pending, staged, true, &needsReenable);
+            if (!replaced || !needsReenable) {
+                onFinished(replaced);
+                return;
+            }
+
+            self->setModsEnabledAsync({pending->modId}, true, context.data(),
+                                      [self, onFinished](const EnableOutcome &outcome) {
+                if (self && outcome.failed > 0) {
+                    emit self->errorOccurred(tr("Failed to re-enable mod after replacement"));
+                }
+                onFinished(true);
+            });
         },
         [pending, keepAlive](const StagedPak &) { QFile::remove(pending->stagedPath); },
         std::move(token));
@@ -798,6 +822,275 @@ bool ModManager::setModsEnabled(const QStringList &modIds, bool enabled) {
     emit modsChanged();
 
     return !anyFailed;
+}
+
+namespace {
+
+struct EnableStep {
+    QString id;
+    QString name;
+    QString sourcePath;
+    QString destPath;
+    QString partPath;
+    QString numberedName;
+    QStringList removeFirst;
+};
+
+struct EnableStepResult {
+    QString id;
+    QString name;
+    QString numberedName;
+    QString destPath;
+    bool ok = false;
+    bool cancelled = false;
+    QString error;
+};
+
+/// Copies one mod into the paks folder via a temporary name; runs on a worker thread.
+EnableStepResult runEnableStep(const EnableStep &step, const QString &paksPath, const CancelToken &cancel) {
+    EnableStepResult result;
+    result.id = step.id;
+    result.name = step.name;
+    result.numberedName = step.numberedName;
+    result.destPath = step.destPath;
+
+    if (!QDir(paksPath).exists()) {
+        result.error = QCoreApplication::translate("ModManager", "Paks directory not found: %1").arg(paksPath);
+        return result;
+    }
+    if (!QFile::exists(step.sourcePath)) {
+        result.error = QCoreApplication::translate("ModManager", "Mod file not found in storage: %1")
+                           .arg(step.sourcePath);
+        return result;
+    }
+
+    for (const QString &stale : step.removeFirst) {
+        if (QFile::exists(stale)) {
+            QFile::remove(stale);
+        }
+    }
+
+    if (!copyFileChunked(step.sourcePath, step.partPath, &cancel, &result.error, &result.cancelled)) {
+        return result;
+    }
+    if (!QFile::rename(step.partPath, step.destPath)) {
+        QFile::remove(step.partPath);
+        result.error = QCoreApplication::translate("ModManager", "Failed to move the mod into the paks folder");
+        return result;
+    }
+
+#ifdef Q_OS_LINUX
+    QFile::setPermissions(step.destPath,
+        QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+        QFileDevice::ReadGroup | QFileDevice::ReadOther);
+#endif
+
+    result.ok = true;
+    return result;
+}
+
+} // namespace
+
+struct ModManager::EnableJob {
+    QStringList ids;
+    QPointer<QObject> context;
+    std::function<void(const EnableOutcome &)> onFinished;
+    CancelTokenPtr token;
+};
+
+struct ModManager::EnableWork {
+    QList<EnableStepResult> results;
+    int planned = 0;
+};
+
+CancelTokenPtr ModManager::setModsEnabledAsync(const QStringList &modIds, bool enabled, QObject *context,
+                                               std::function<void(const EnableOutcome &)> onFinished) {
+    auto job = std::make_shared<EnableJob>();
+    job->ids = modIds;
+    job->context = context;
+    job->onFinished = std::move(onFinished);
+    job->token = std::make_shared<CancelToken>();
+
+    if (!enabled) {
+        EnableOutcome outcome;
+        outcome.failed = setModsEnabled(modIds, false) ? 0 : 1;
+        job->onFinished(outcome);
+        return job->token;
+    }
+
+    m_enableQueue.append(job);
+    if (!m_enableRunning) {
+        startNextEnableJob();
+    }
+    return job->token;
+}
+
+void ModManager::startNextEnableJob() {
+    while (!m_enableQueue.isEmpty()) {
+        const std::shared_ptr<EnableJob> job = m_enableQueue.takeFirst();
+        if (!job->context) {
+            continue;
+        }
+        if (job->token->isCancelled()) {
+            EnableOutcome outcome;
+            outcome.cancelled = true;
+            job->onFinished(outcome);
+            continue;
+        }
+
+        m_enableRunning = true;
+        runEnableJob(job);
+        return;
+    }
+    m_enableRunning = false;
+}
+
+void ModManager::runEnableJob(const std::shared_ptr<EnableJob> &job) {
+    const QSet<QString> idSet(job->ids.begin(), job->ids.end());
+    QList<ModInfo> toEnable;
+    {
+        QMutexLocker locker(&m_modsMutex);
+        for (const ModInfo &mod : m_mods) {
+            if (idSet.contains(mod.id) && !mod.enabled) {
+                toEnable.append(mod);
+            }
+        }
+    }
+
+    const QString paksPath = getPaksPath();
+    QList<EnableStep> steps;
+    for (const ModInfo &mod : toEnable) {
+        EnableStep step;
+        step.id = mod.id;
+        step.name = mod.name;
+        step.sourcePath = m_modsStoragePath + "/" + mod.fileName;
+        step.numberedName = generateNumberedFileName(mod.priority, mod.fileName);
+        step.destPath = paksPath + "/" + step.numberedName;
+        step.partPath = step.destPath + ".part";
+        if (!mod.numberedFileName.isEmpty()) {
+            step.removeFirst.append(paksPath + "/" + mod.numberedFileName);
+        }
+        if (mod.fileName != step.numberedName) {
+            step.removeFirst.append(paksPath + "/" + mod.fileName);
+        }
+        step.removeFirst.append(step.destPath);
+        steps.append(step);
+    }
+
+    const int total = static_cast<int>(steps.size());
+    if (total == 0 || paksPath.isEmpty()) {
+        EnableWork nothing;
+        nothing.planned = total;
+        if (paksPath.isEmpty() && total > 0) {
+            for (const EnableStep &step : steps) {
+                EnableStepResult failed;
+                failed.id = step.id;
+                failed.name = step.name;
+                nothing.results.append(failed);
+            }
+        }
+        finishEnableJob(job, nothing);
+        return;
+    }
+
+    // The worker only bumps a counter; a timer on this thread turns it into progress signals.
+    auto done = std::make_shared<std::atomic_int>(0);
+    auto *timer = new QTimer(this);
+    timer->setInterval(100);
+    connect(timer, &QTimer::timeout, this, [this, done, total]() { emit enableProgress(done->load(), total); });
+    timer->start();
+
+    QPointer<ModManager> self(this);
+    runCancellable<EnableWork>(
+        this,
+        [steps, paksPath, done, total](const CancelToken &cancel) {
+            EnableWork work;
+            work.planned = total;
+            for (const EnableStep &step : steps) {
+                if (cancel.isCancelled()) {
+                    break;
+                }
+                const EnableStepResult result = runEnableStep(step, paksPath, cancel);
+                work.results.append(result);
+                done->fetch_add(1);
+                if (result.cancelled) {
+                    break;
+                }
+            }
+            return work;
+        },
+        [self, job, timer](const EnableWork &work) {
+            timer->stop();
+            timer->deleteLater();
+            if (self) {
+                self->finishEnableJob(job, work);
+            }
+        },
+        // Only reached when the manager itself goes away mid-copy: leave no unregistered paks behind.
+        [](const EnableWork &work) {
+            for (const EnableStepResult &result : work.results) {
+                if (result.ok) {
+                    QFile::remove(result.destPath);
+                }
+            }
+        },
+        job->token);
+}
+
+void ModManager::finishEnableJob(const std::shared_ptr<EnableJob> &job, const EnableWork &work) {
+    EnableOutcome outcome;
+    QStringList enabledIds;
+
+    for (const EnableStepResult &result : work.results) {
+        if (result.cancelled) {
+            outcome.cancelled = true;
+            continue;
+        }
+        if (!result.ok) {
+            qWarning() << "Failed to enable mod" << result.name << ":" << result.error;
+            emit errorOccurred(result.error.isEmpty()
+                                   ? tr("Failed to enable mod: %1").arg(result.name)
+                                   : tr("Failed to enable mod: %1 (%2)").arg(result.name, result.error));
+            ++outcome.failed;
+            continue;
+        }
+
+        QMutexLocker locker(&m_modsMutex);
+        auto it = std::ranges::find_if(m_mods,
+                               [&result](const ModInfo &mod) { return mod.id == result.id; });
+        if (it == m_mods.end()) {
+            QFile::remove(result.destPath);
+            continue;
+        }
+        if (!it->enabled) {
+            it->enabled = true;
+            it->numberedFileName = result.numberedName;
+            enabledIds.append(result.id);
+            ++outcome.enabled;
+        }
+    }
+    if (static_cast<int>(work.results.size()) < work.planned) {
+        outcome.cancelled = true;
+    }
+
+    if (!enabledIds.isEmpty()) {
+        renumberEnabledMods();
+        saveMods();
+        for (const QString &id : std::as_const(enabledIds)) {
+            emit modEnabled(id);
+        }
+        emit modsChanged();
+    }
+    emit enableProgress(work.planned, work.planned);
+
+    qDebug() << "Enable job finished:" << outcome.enabled << "enabled," << outcome.failed << "failed"
+             << (outcome.cancelled ? "(cancelled)" : "");
+
+    if (job->context) {
+        job->onFinished(outcome);
+    }
+    m_enableRunning = false;
+    startNextEnableJob();
 }
 
 bool ModManager::setModPriority(const QString &modId, int priority) {

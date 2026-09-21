@@ -35,6 +35,8 @@ qt_add_executable(TrenchKit
   views/mod_manager/LogEntryWidget.cpp
   views/mod_manager/ActivityLogWidget.h
   views/mod_manager/ActivityLogWidget.cpp
+  views/mod_manager/ModEnableProgress.h
+  views/mod_manager/ModEnableProgress.cpp
   views/mod_manager/LaunchWidget.h
   views/mod_manager/LaunchWidget.cpp
   views/mod_manager/ProfileManagerWidget.h
