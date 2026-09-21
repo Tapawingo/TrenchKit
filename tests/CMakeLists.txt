@@ -20,6 +20,7 @@ target_include_directories(tests_utilities
 target_compile_definitions(tests_utilities
   PRIVATE
     LIBARCHIVE_STATIC
+    TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
 )
 
 target_link_libraries(tests_utilities

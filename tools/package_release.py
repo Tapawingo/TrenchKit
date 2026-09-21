@@ -47,7 +47,7 @@ def copy_tree(src: Path, dst: Path) -> None:
         shutil.copy2(src, dst)
 
 
-def stage_release_payload(build_dir: Path, staging_dir: Path) -> None:
+def stage_release_payload(build_dir: Path, staging_dir: Path, notices_file: Path) -> None:
     if staging_dir.exists():
         shutil.rmtree(staging_dir)
     staging_dir.mkdir(parents=True, exist_ok=True)
@@ -63,6 +63,11 @@ def stage_release_payload(build_dir: Path, staging_dir: Path) -> None:
         dll_path = build_dir / dll_name
         if dll_path.exists():
             shutil.copy2(dll_path, staging_dir / dll_path.name)
+
+    # The bundled libraries' licenses require their notices to travel with the binaries.
+    if not notices_file.exists():
+        raise RuntimeError(f"Missing third-party license notices: {notices_file}")
+    shutil.copy2(notices_file, staging_dir / notices_file.name)
 
     zip_dll = build_dir / "_deps" / "zip-build" / "libzip.dll"
     if zip_dll.exists():
@@ -232,7 +237,7 @@ def main() -> int:
     staging_dir = dist_dir / "app"
 
     version = read_version(project_root)
-    stage_release_payload(build_dir, staging_dir)
+    stage_release_payload(build_dir, staging_dir, project_root / "THIRD_PARTY_NOTICES.md")
 
     sign_pfx_defined = bool(args.sign_pfx or os.environ.get("TRENCHKIT_SIGN_PFX"))
     if sign_pfx_defined:

@@ -111,6 +111,10 @@ def build_package_script(qt_dir: str, version: str, appimage_name: str, zip_name
         cp /build/src/TrenchKit            "$TKAPPDIR/usr/bin/"
         cp /build/updater/TrenchKitUpdater "$TKAPPDIR/usr/bin/"
 
+        # The bundled libraries' licenses require their notices to travel with the binaries.
+        mkdir -p "$TKAPPDIR/usr/share/doc/trenchkit"
+        cp /src/THIRD_PARTY_NOTICES.md "$TKAPPDIR/usr/share/doc/trenchkit/"
+
         convert /src/extras/logo/logo_transparent.png \\
             -resize 256x256 \\
             "$TKAPPDIR/usr/share/icons/hicolor/256x256/apps/io.github.tapawingo.trenchkit.png"
