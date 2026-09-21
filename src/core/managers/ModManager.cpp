@@ -19,21 +19,45 @@
 #include "core/utils/ModManifestReader.h"
 #include "core/utils/PakFileReader.h"
 
+namespace {
+
+/// Removes the temporary copies an interrupted run left behind (a killed app cannot clean up after itself).
+void removeStaleParts(const QString &dir, const QString &pattern) {
+    if (dir.isEmpty()) {
+        return;
+    }
+    const QDir folder(dir);
+    for (const QString &name : folder.entryList({pattern}, QDir::Files)) {
+        QFile::remove(folder.filePath(name));
+    }
+}
+
+} // namespace
+
+ModManager::~ModManager() {
+    shutdownEnableJob();
+}
+
 ModManager::ModManager(QObject *parent)
     : QObject(parent)
 {
     QString appDataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     m_modsStoragePath = appDataPath + "/mods";
     QDir().mkpath(m_modsStoragePath);
+    removeStaleParts(m_modsStoragePath, QStringLiteral("*.part"));
 }
 
 void ModManager::setInstallPath(const QString &foxholeInstallPath) {
     m_foxholeInstallPath = foxholeInstallPath;
+    if (!m_enableRunning) {
+        removeStaleParts(getPaksPath(), QStringLiteral("*.pak.part"));
+    }
 }
 
 void ModManager::setModsStoragePath(const QString &modsPath) {
     m_modsStoragePath = modsPath;
     QDir().mkpath(m_modsStoragePath);
+    removeStaleParts(m_modsStoragePath, QStringLiteral("*.part"));
 }
 
 QString ModManager::getPaksPath() const {
@@ -881,17 +905,21 @@ EnableStepResult runEnableStep(const EnableStep &step, const QString &paksPath, 
 
 } // namespace
 
+struct ModManager::EnableWork {
+    QList<EnableStepResult> results;
+    int planned = 0;
+};
+
 struct ModManager::EnableJob {
     QStringList ids;
     QStringList claimed;
     QPointer<QObject> context;
     std::function<void(const EnableOutcome &)> onFinished;
     CancelTokenPtr token;
-};
-
-struct ModManager::EnableWork {
-    QList<EnableStepResult> results;
-    int planned = 0;
+    QFuture<EnableWork> future;
+    /// Set once shutdown has registered the finished mods, so the abandon handler leaves their paks alone.
+    std::shared_ptr<std::atomic_bool> keepFiles = std::make_shared<std::atomic_bool>(false);
+    bool finished = false;
 };
 
 CancelTokenPtr ModManager::setModsEnabledAsync(const QStringList &modIds, bool enabled, QObject *context,
@@ -979,6 +1007,7 @@ void ModManager::startNextEnableJob() {
 }
 
 void ModManager::runEnableJob(const std::shared_ptr<EnableJob> &job) {
+    m_runningEnable = job;
     const QSet<QString> idSet(job->ids.begin(), job->ids.end());
     QList<ModInfo> toEnable;
     {
@@ -1059,18 +1088,26 @@ void ModManager::runEnableJob(const std::shared_ptr<EnableJob> &job) {
                 self->finishEnableJob(job, work);
             }
         },
-        // Only reached when the manager itself goes away mid-copy: leave no unregistered paks behind.
-        [](const EnableWork &work) {
+        // Only reached when the manager goes away without shutdownEnableJob() having registered the
+        // finished mods: leave no unregistered paks behind.
+        [keep = job->keepFiles](const EnableWork &work) {
+            if (keep->load()) {
+                return;
+            }
             for (const EnableStepResult &result : work.results) {
                 if (result.ok) {
                     QFile::remove(result.destPath);
                 }
             }
         },
-        job->token);
+        job->token, &job->future);
 }
 
-void ModManager::finishEnableJob(const std::shared_ptr<EnableJob> &job, const EnableWork &work) {
+void ModManager::finishEnableJob(const std::shared_ptr<EnableJob> &job, const EnableWork &work, bool notify) {
+    if (job->finished) {
+        return;
+    }
+    job->finished = true;
     releaseEnableClaims(job);
     EnableOutcome outcome;
     QStringList enabledIds;
@@ -1120,11 +1157,36 @@ void ModManager::finishEnableJob(const std::shared_ptr<EnableJob> &job, const En
     qDebug() << "Enable job finished:" << outcome.enabled << "enabled," << outcome.failed << "failed"
              << (outcome.cancelled ? "(cancelled)" : "");
 
-    if (job->context) {
+    if (m_runningEnable == job) {
+        m_runningEnable.reset();
+    }
+    if (notify && job->context) {
         job->onFinished(outcome);
     }
     m_enableRunning = false;
-    startNextEnableJob();
+    if (notify) {
+        startNextEnableJob();
+    }
+}
+
+void ModManager::shutdownEnableJob() {
+    for (const auto &queued : std::as_const(m_enableQueue)) {
+        releaseEnableClaims(queued);
+    }
+    m_enableQueue.clear();
+
+    const std::shared_ptr<EnableJob> job = m_runningEnable;
+    if (!job || job->finished) {
+        return;
+    }
+
+    // Stop after the pak being copied, then keep what is done: those mods stay enabled and are saved.
+    job->token->cancel();
+    job->future.waitForFinished();
+    job->keepFiles->store(true);
+
+    const QSignalBlocker quiet(this);
+    finishEnableJob(job, job->future.result(), false);
 }
 
 bool ModManager::setModPriority(const QString &modId, int priority) {

@@ -21,6 +21,7 @@
  * stopped, so it can release whatever the work produced. @p onAbandoned must not touch UI or shared state.
  *
  * @param token Optional token to share with other stages; a new one is created if null.
+ * @param futureOut Optional; receives the running work, so an owner that is shutting down can wait for it.
  * @returns The token; cancel it to make the work stop at its next checkpoint.
  */
 template <typename T>
@@ -28,7 +29,8 @@ CancelTokenPtr runCancellable(QObject *context,
                               std::function<T(const CancelToken &)> work,
                               std::function<void(const T &)> onFinished,
                               std::function<void(const T &)> onAbandoned,
-                              CancelTokenPtr token = {}) {
+                              CancelTokenPtr token = {},
+                              QFuture<T> *futureOut = nullptr) {
     if (!token) {
         token = std::make_shared<CancelToken>();
     }
@@ -37,6 +39,9 @@ CancelTokenPtr runCancellable(QObject *context,
     auto delivered = std::make_shared<bool>(false);
 
     QFuture<T> future = QtConcurrent::run([work = std::move(work), token]() -> T { return work(*token); });
+    if (futureOut) {
+        *futureOut = future;
+    }
 
     QObject::connect(watcher, &QFutureWatcherBase::finished, context,
                      [watcher, delivered, onFinished = std::move(onFinished)] {
