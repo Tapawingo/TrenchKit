@@ -117,22 +117,21 @@ public:
                             std::function<void(bool)> onFinished);
 
     /**
-     * @brief Copies the mod's pak into the Foxhole paks folder.
-     */
-    bool enableMod(const QString &modId);
-    /**
      * @brief Removes the mod's pak from the Foxhole paks folder.
+     *
+     * Enabling has no blocking counterpart on purpose: copying a pak into the game folder takes long
+     * enough to freeze the window, so it only exists as setModsEnabledAsync().
      */
     bool disableMod(const QString &modId);
 
     /**
-     * @brief Enables or disables all mods in a single batch operation.
+     * @brief Disables every enabled mod in a single batch operation.
      */
-    bool setAllModsEnabled(bool enabled);
+    bool disableAllMods();
     /**
-     * @brief Enables or disables a specific set of mods by ID.
+     * @brief Disables a specific set of mods by ID.
      */
-    bool setModsEnabled(const QStringList &modIds, bool enabled);
+    bool disableMods(const QStringList &modIds);
 
     /**
      * @brief What an asynchronous enable job achieved.
@@ -145,7 +144,7 @@ public:
     };
 
     /**
-     * @brief Like @c setModsEnabled(), but copies the paks into the game folder on a worker thread.
+     * @brief Enables mods by copying their paks into the game folder on a worker thread.
      *
      * Each pak is copied to a temporary name and renamed into place, so the game never sees a partial file.
      * Jobs run one after another. Disabling is cheap and happens at once. @p onFinished receives the outcome on
@@ -269,6 +268,8 @@ private:
     QString getModFilePath(const QString &modId) const;
     QString getMetadataFilePath() const;
     bool copyModToPaks(const ModInfo &mod);
+    /// Copies the pak on the calling thread. Only the synchronous replaceMod() may use it.
+    bool enableModBlocking(const QString &modId);
     bool removeModFromPaks(const ModInfo &mod);
     void sortModsByPriority();
     /**

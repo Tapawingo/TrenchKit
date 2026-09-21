@@ -116,12 +116,9 @@ public:
 
     /**
      * @brief Applies a profile, restoring the mod enabled/priority state it captured.
+     *
+     * The paks of the mods to enable are copied on a worker thread.
      * @param ignoreWarnings  If true, applies even when some mods are missing.
-     */
-    bool applyProfile(const QString &profileId, bool ignoreWarnings = false);
-
-    /**
-     * @brief Like @c applyProfile(), but copies the paks of the mods to enable on a worker thread.
      *
      * Problems found up front are reported at once (@p onFinished(false) before this returns, null result).
      * Otherwise @p onFinished receives the outcome on the calling thread, and not at all if @p context
@@ -172,7 +169,6 @@ signals:
 private:
     QString getStorageFilePath() const;
     ProfileInfo captureCurrentState() const;
-    bool applyProfileInternal(const ProfileInfo &profile);
     /// Disables every mod and applies the profile's load order; returns the ids the profile wants enabled.
     QStringList prepareProfile(const ProfileInfo &profile);
 

@@ -124,6 +124,22 @@ struct ModLibrary {
     QStringList paksFiles(const QString &pattern = QStringLiteral("*")) const {
         return QDir(paksPath()).entryList({pattern}, QDir::Files);
     }
+
+    /// Enables a mod through the background job and waits for it.
+    bool enableNow(const QString &id) {
+        bool done = false;
+        bool ok = false;
+        manager.setModsEnabledAsync({id}, true, &manager, [&](const ModManager::EnableOutcome &outcome) {
+            done = true;
+            ok = outcome.ok();
+        });
+        QElapsedTimer timer;
+        timer.start();
+        while (!done && timer.elapsed() < 10000) {
+            QTest::qWait(5);
+        }
+        return done && ok;
+    }
 };
 
 static QStringList extractDirs() {
@@ -1002,7 +1018,7 @@ private slots:
         ModLibrary lib;
         QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
         const QString id = lib.addMod("Live", validPakBytes());
-        QVERIFY(lib.manager.enableMod(id));
+        QVERIFY(lib.enableNow(id));
         QVERIFY(lib.manager.getMod(id).enabled);
 
         const QByteArray updateBytes = pakBytesOfSize(4 << 20);
@@ -1034,8 +1050,8 @@ private slots:
         const QByteArray bytesB = pakBytesOfSize(3 << 20);
         const QString idA = lib.addMod("Alpha", bytesA);
         const QString idB = lib.addMod("Bravo", bytesB);
-        QVERIFY(lib.manager.enableMod(idA));
-        QVERIFY(lib.manager.enableMod(idB));
+        QVERIFY(lib.enableNow(idA));
+        QVERIFY(lib.enableNow(idB));
 
         const ModInfo before = lib.manager.getMod(idA);
         const QDateTime born = QFileInfo(lib.paksPath() + "/" + before.numberedFileName).birthTime();
