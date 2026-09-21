@@ -97,6 +97,8 @@ qt_add_executable(TrenchKit
   core/utils/ModManifestReader.cpp
   core/utils/PakFileReader.h
   core/utils/PakFileReader.cpp
+  core/utils/Rar5StoredCrc.h
+  core/utils/Rar5StoredCrc.cpp
   core/utils/TranslationManager.h
   core/utils/TranslationManager.cpp
   core/utils/TsTranslator.h

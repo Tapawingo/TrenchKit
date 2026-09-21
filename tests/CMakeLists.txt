@@ -4,6 +4,8 @@ qt_add_executable(tests_utilities
   ${CMAKE_SOURCE_DIR}/src/core/utils/ArchiveExtractor.cpp
   ${CMAKE_SOURCE_DIR}/src/core/utils/PakFileReader.h
   ${CMAKE_SOURCE_DIR}/src/core/utils/PakFileReader.cpp
+  ${CMAKE_SOURCE_DIR}/src/core/utils/Rar5StoredCrc.h
+  ${CMAKE_SOURCE_DIR}/src/core/utils/Rar5StoredCrc.cpp
   ${CMAKE_SOURCE_DIR}/src/core/utils/ModManifestReader.h
   ${CMAKE_SOURCE_DIR}/src/core/utils/ModManifestReader.cpp
   ${CMAKE_SOURCE_DIR}/src/core/models/ModInfo.h
