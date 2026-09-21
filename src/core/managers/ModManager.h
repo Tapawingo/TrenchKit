@@ -11,6 +11,7 @@
 #include <QList>
 #include <QMap>
 #include <QMutex>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <functional>
@@ -144,6 +145,14 @@ public:
     };
 
     /**
+     * @brief True from the moment a mod is handed to setModsEnabledAsync() until that job is over.
+     *
+     * Such a mod cannot be disabled, removed or replaced yet, because the job would enable it a moment
+     * later; those calls are refused with an error instead of silently losing the request.
+     */
+    [[nodiscard]] bool isEnabling(const QString &modId) const;
+
+    /**
      * @brief Enables mods by copying their paks into the game folder on a worker thread.
      *
      * Each pak is copied to a temporary name and renamed into place, so the game never sees a partial file.
@@ -244,6 +253,9 @@ private:
     struct EnableJob;
     struct EnableWork;
     void startNextEnableJob();
+    void releaseEnableClaims(const std::shared_ptr<EnableJob> &job);
+    /// Emits an error and returns true when @p modId is still waiting for an enable job.
+    bool refuseWhileEnabling(const QString &modId);
     void runEnableJob(const std::shared_ptr<EnableJob> &job);
     void finishEnableJob(const std::shared_ptr<EnableJob> &job, const EnableWork &work);
 
@@ -292,6 +304,7 @@ private:
 
     QList<std::shared_ptr<EnableJob>> m_enableQueue;
     bool m_enableRunning = false;
+    QSet<QString> m_enablingIds;
 };
 
 #endif // MODMANAGER_H

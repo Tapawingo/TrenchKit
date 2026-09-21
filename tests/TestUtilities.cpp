@@ -1014,6 +1014,88 @@ private slots:
         QVERIFY(lib.paksFiles("*.part").isEmpty());
     }
 
+    void testModsBeingEnabledCannotBeDisabledRemovedOrReplaced() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QString a = lib.addMod("Alpha", pakBytesOfSize(4 << 20));
+        const QString b = lib.addMod("Bravo", pakBytesOfSize(4 << 20));
+        const QString c = lib.addMod("Charlie", pakBytesOfSize(4 << 20));
+        const QString update = lib.work.filePath("AlphaUpdate.pak");
+        QVERIFY(writeAll(update, pakBytesOfSize(1 << 20)));
+        QSignalSpy errors(&lib.manager, &ModManager::errorOccurred);
+
+        bool done = false;
+        lib.manager.setModsEnabledAsync({a, b}, true, &lib.manager,
+                                        [&](const ModManager::EnableOutcome &) { done = true; });
+
+        // Nothing has been processed yet, so the job cannot have finished.
+        QVERIFY(lib.manager.isEnabling(a));
+        QVERIFY(lib.manager.isEnabling(b));
+        QVERIFY(!lib.manager.isEnabling(c));
+
+        QVERIFY(!lib.manager.disableMod(a));
+        QCOMPARE(errors.size(), 1);
+        QVERIFY(errors.last().at(0).toString().contains("still being enabled"));
+        QVERIFY(!lib.manager.removeMod(a));
+        QCOMPARE(errors.size(), 2);
+        QVERIFY(!lib.manager.replaceMod(a, update, "2.0", "1"));
+        QCOMPARE(errors.size(), 3);
+        bool replaceAnswered = false;
+        bool replaceOk = true;
+        lib.manager.replaceModAsync(a, update, "2.0", "1", QDateTime(), &lib.manager, [&](bool ok) {
+            replaceAnswered = true;
+            replaceOk = ok;
+        });
+        QVERIFY(replaceAnswered && !replaceOk);
+        QCOMPARE(errors.size(), 4);
+        QVERIFY(!lib.manager.disableMods({a, c}));
+        QCOMPARE(errors.size(), 5);
+        QVERIFY(!lib.manager.disableAllMods());
+        QCOMPARE(errors.size(), 7);
+
+        QTRY_VERIFY_WITH_TIMEOUT(done, 10000);
+        QVERIFY(lib.manager.getMod(a).enabled && lib.manager.getMod(b).enabled);
+        QVERIFY(!lib.manager.isEnabling(a) && !lib.manager.isEnabling(b));
+        QCOMPARE(errors.size(), 7);
+
+        // Once the job is over the same calls work.
+        QVERIFY(lib.manager.disableMod(a));
+        QVERIFY(lib.manager.removeMod(b));
+    }
+
+    void testEnableJobsThatNeverRunReleaseTheirMods() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QString a = lib.addMod("Alpha", pakBytesOfSize(4 << 20));
+        const QString b = lib.addMod("Bravo", pakBytesOfSize(4 << 20));
+        const QString c = lib.addMod("Charlie", pakBytesOfSize(4 << 20));
+
+        bool firstDone = false;
+        bool cancelledDone = false;
+        bool cancelledFlag = false;
+        lib.manager.setModsEnabledAsync({a}, true, &lib.manager,
+                                        [&](const ModManager::EnableOutcome &) { firstDone = true; });
+        const auto queued = lib.manager.setModsEnabledAsync({b}, true, &lib.manager,
+                                                            [&](const ModManager::EnableOutcome &outcome) {
+            cancelledDone = true;
+            cancelledFlag = outcome.cancelled;
+        });
+        auto *gone = new QObject;
+        lib.manager.setModsEnabledAsync({c}, true, gone, [](const ModManager::EnableOutcome &) {});
+        delete gone;
+
+        QVERIFY(lib.manager.isEnabling(b) && lib.manager.isEnabling(c));
+        queued->cancel();
+
+        QTRY_VERIFY_WITH_TIMEOUT(firstDone && cancelledDone, 10000);
+        QVERIFY(cancelledFlag);
+        QTRY_VERIFY_WITH_TIMEOUT(lib.manager.getMod(c).enabled || !lib.manager.isEnabling(c), 10000);
+        QVERIFY(!lib.manager.isEnabling(a));
+        QVERIFY(!lib.manager.isEnabling(b));
+        QVERIFY(!lib.manager.getMod(b).enabled);
+        QVERIFY(lib.manager.disableMod(b));
+    }
+
     void testReplaceModAsyncKeepsAnEnabledModEnabled() {
         ModLibrary lib;
         QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());

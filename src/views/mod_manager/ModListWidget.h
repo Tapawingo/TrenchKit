@@ -14,7 +14,6 @@
 #include <QTimer>
 #include <QRegularExpression>
 #include <QCheckBox>
-#include <QSet>
 #include <QStringList>
 #include <QUrl>
 #include <functional>
@@ -168,7 +167,6 @@ private:
     bool m_updating = false;
     int m_pendingUpdateChecks = 0;
     int m_totalUpdatesFound = 0;
-    QSet<QString> m_enablingIds;
     QStringList m_dropQueue;
     bool m_dropBusy = false;
 };
