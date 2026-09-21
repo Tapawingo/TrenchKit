@@ -502,6 +502,23 @@ private slots:
         ArchiveExtractor::cleanupTempDir(result.tempDir);
     }
 
+    void testUpdateArchiveExtractorRejectsTruncatedArchive() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        // A truncated update must fail with an error, never leave a half-extracted staging directory that looks valid.
+        for (const QString &name : {QStringLiteral("mod_deflate.zip"), QStringLiteral("mod_lzma.7z")}) {
+            const QByteArray bytes = readAll(fixture(name));
+            const QString truncated = dir.filePath("truncated_" + name);
+            QVERIFY(writeAll(truncated, bytes.left(bytes.size() / 2)));
+
+            QString error;
+            QVERIFY2(!UpdateArchiveExtractor::extractArchive(truncated, dir.filePath("staging_" + name), &error),
+                     qPrintable(name));
+            QVERIFY(!error.isEmpty());
+        }
+    }
+
     void testUpdateCleanup() {
         QTemporaryDir tempDir;
         QVERIFY(tempDir.isValid());
