@@ -6,7 +6,9 @@
 #include "common/modals/MessageModal.h"
 #include "modals/mod_manager/ConflictResolutionModalContent.h"
 #include "common/modals/InputModal.h"
+#include "core/managers/ModManager.h"
 #include "core/managers/ProfileManager.h"
+#include "ModEnableProgress.h"
 #include "core/utils/Theme.h"
 #include <QLabel>
 #include <QPushButton>
@@ -452,21 +454,39 @@ void ProfileManagerWidget::showValidationDialog(const QString &profileId) {
             MessageModal::Warning,
             MessageModal::Yes | MessageModal::No
         );
-        connect(modal, &MessageModal::finished, this, [this, modal, profileId]() {
+        connect(modal, &MessageModal::finished, this, [this, modal, profileId, profile]() {
             if (modal->clickedButton() == MessageModal::Yes) {
-                if (m_profileManager->applyProfile(profileId, true)) {
-                    emit profileLoadRequested(profileId);
-                }
+                applyProfileInBackground(profileId, profile, true, false);
             }
         });
         m_modalManager->showModal(modal);
     } else {
-        if (m_profileManager->applyProfile(profileId, false)) {
-            emit profileLoadRequested(profileId);
-            MessageModal::information(m_modalManager, tr("Success"),
-                tr("Profile '%1' loaded successfully!").arg(profile.name));
-        }
+        applyProfileInBackground(profileId, profile, false, true);
     }
+}
+
+void ProfileManagerWidget::applyProfileInBackground(const QString &profileId, const ProfileInfo &profile,
+                                                    bool ignoreWarnings, bool announceSuccess) {
+    int modsToEnable = 0;
+    for (const ModConfig &config : profile.modConfigs) {
+        modsToEnable += config.enabled ? 1 : 0;
+    }
+
+    ModEnableProgress::run(m_profileManager->modManager(), m_modalManager, modsToEnable, tr("Loading profile..."),
+        [this, profileId, profile, ignoreWarnings, announceSuccess](ModEnableProgress::Done done) {
+        return m_profileManager->applyProfileAsync(profileId, ignoreWarnings, this,
+            [this, profileId, profile, announceSuccess, done](bool applied) {
+            done();
+            if (!applied) {
+                return;
+            }
+            emit profileLoadRequested(profileId);
+            if (announceSuccess) {
+                MessageModal::information(m_modalManager, tr("Success"),
+                    tr("Profile '%1' loaded successfully!").arg(profile.name));
+            }
+        });
+    });
 }
 
 void ProfileManagerWidget::onItemsReordered() {

@@ -135,6 +135,29 @@ public:
     bool setModsEnabled(const QStringList &modIds, bool enabled);
 
     /**
+     * @brief What an asynchronous enable job achieved.
+     */
+    struct EnableOutcome {
+        int enabled = 0;        ///< Mods that are enabled because of this job.
+        int failed = 0;         ///< Mods that could not be enabled (an error signal was emitted for each).
+        bool cancelled = false; ///< Stopped through the token before every mod was done.
+        [[nodiscard]] bool ok() const { return failed == 0 && !cancelled; }
+    };
+
+    /**
+     * @brief Like @c setModsEnabled(), but copies the paks into the game folder on a worker thread.
+     *
+     * Each pak is copied to a temporary name and renamed into place, so the game never sees a partial file.
+     * Jobs run one after another. Disabling is cheap and happens at once. @p onFinished receives the outcome on
+     * the calling thread (possibly before this returns when there is nothing to do), and not at all if
+     * @p context is destroyed first; the job still finishes and keeps the mod list consistent.
+     * Progress is reported through @c enableProgress().
+     * @returns A token that stops the job after the pak being copied; finished mods stay enabled.
+     */
+    CancelTokenPtr setModsEnabledAsync(const QStringList &modIds, bool enabled, QObject *context,
+                                       std::function<void(const EnableOutcome &)> onFinished);
+
+    /**
      * @brief Changes the load-order priority of a mod and renumbers enabled mods.
      */
     bool setModPriority(const QString &modId, int priority);
@@ -213,7 +236,18 @@ signals:
     void modRemoved(const QString &modId);
     void errorOccurred(const QString &error);
 
+    /**
+     * @brief Progress of the running @c setModsEnabledAsync() job: @p done of @p total mods copied.
+     */
+    void enableProgress(int done, int total);
+
 private:
+    struct EnableJob;
+    struct EnableWork;
+    void startNextEnableJob();
+    void runEnableJob(const std::shared_ptr<EnableJob> &job);
+    void finishEnableJob(const std::shared_ptr<EnableJob> &job, const EnableWork &work);
+
     struct StagedPak;
     struct PendingAdd;
     struct PendingReplace;
@@ -224,7 +258,9 @@ private:
     bool finishAdd(PendingAdd &pending, const StagedPak &staged);
     bool prepareReplace(const QString &modId, const QString &newPakPath, const QString &newVersion,
                         const QString &newFileId, const QDateTime &uploadDate, PendingReplace *pending);
-    bool finishReplace(const PendingReplace &pending, const StagedPak &staged);
+    /// With @p deferReenable a previously enabled mod is not re-enabled here; @p needsReenable tells the caller to.
+    bool finishReplace(const PendingReplace &pending, const StagedPak &staged, bool deferReenable = false,
+                       bool *needsReenable = nullptr);
     CancelTokenPtr replaceStaged(const QString &modId, const QString &newPakPath, const QString &newVersion,
                                  const QString &newFileId, const QDateTime &uploadDate, QObject *context,
                                  std::function<void(bool)> onFinished, CancelTokenPtr token,
@@ -252,6 +288,9 @@ private:
     QString m_modsStoragePath;
     QList<ModInfo> m_mods;
     mutable QRecursiveMutex m_modsMutex;
+
+    QList<std::shared_ptr<EnableJob>> m_enableQueue;
+    bool m_enableRunning = false;
 };
 
 #endif // MODMANAGER_H

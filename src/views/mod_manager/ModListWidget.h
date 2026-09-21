@@ -14,6 +14,7 @@
 #include <QTimer>
 #include <QRegularExpression>
 #include <QCheckBox>
+#include <QSet>
 #include <QStringList>
 #include <QUrl>
 #include <functional>
@@ -131,6 +132,8 @@ private:
                                const QString &itchUrl);
     QString extractVersionFromFilename(const QString &filename) const;
     /// Dropped files are handled one after another; each handler calls @p onDone when it is finished.
+    /// Enables mods on a worker thread behind a progress indication; @p onDone runs when the job is over.
+    void enableModsInBackground(const QStringList &modIds, std::function<void()> onDone = {});
     void processNextDropped();
     void handlePakFile(const QString &pakPath, std::function<void()> onDone);
     void handleArchiveFile(const QString &archivePath, std::function<void()> onDone);
@@ -165,6 +168,7 @@ private:
     bool m_updating = false;
     int m_pendingUpdateChecks = 0;
     int m_totalUpdatesFound = 0;
+    QSet<QString> m_enablingIds;
     QStringList m_dropQueue;
     bool m_dropBusy = false;
 };

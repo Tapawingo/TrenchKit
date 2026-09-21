@@ -5,6 +5,7 @@
 #ifndef PROFILEMANAGERWIDGET_H
 #define PROFILEMANAGERWIDGET_H
 
+#include "core/models/ProfileInfo.h"
 #include <QWidget>
 #include <QString>
 #include <QEvent>
@@ -70,6 +71,8 @@ private:
     QString getSelectedProfileId() const;
     void updateButtonStates();
     void showValidationDialog(const QString &profileId);
+    void applyProfileInBackground(const QString &profileId, const ProfileInfo &profile, bool ignoreWarnings,
+                                  bool announceSuccess);
 
     QLabel *m_titleLabel;
     DraggableProfileList *m_profileList;

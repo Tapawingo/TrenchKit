@@ -3,6 +3,7 @@
 #include "core/utils/Theme.h"
 #include "common/modals/ModalManager.h"
 #include "common/modals/MessageModal.h"
+#include "ModEnableProgress.h"
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QMenu>
@@ -179,9 +180,7 @@ void LaunchWidget::onLaunchWithoutMods() {
         if (!m_gameProcess->waitForStarted(5000)) {
             emit errorOccurred(tr("Failed to launch Foxhole"));
 
-            for (const QString &modId : m_modsToRestore) {
-                m_modManager->enableMod(modId);
-            }
+            restoreMods(m_modsToRestore, {});
             m_modsToRestore.clear();
         } else {
             m_launchTimer.start();
@@ -321,23 +320,42 @@ void LaunchWidget::restoreDisabledMods() {
         return;
     }
 
-    const int modCount = m_modsToRestore.count();
-    for (const QString &modId : m_modsToRestore) {
-        m_modManager->enableMod(modId);
-    }
+    // Taken over up front: the poll timer must not start a second restore while the first is running.
+    const QStringList modIds = m_modsToRestore;
+    m_modsToRestore.clear();
 
     if (m_waitingModal) {
         m_waitingModal->reject();
         m_waitingModal = nullptr;
     }
 
-    emit modsRestored(modCount);
+    restoreMods(modIds, [this](int restored) {
+        emit modsRestored(restored);
 
-    MessageModal::information(m_modalManager, tr("Mods Restored"),
-        tr("Restored %1 mod(s) that were disabled for vanilla gameplay.")
-        .arg(modCount));
+        MessageModal::information(m_modalManager, tr("Mods Restored"),
+            tr("Restored %1 mod(s) that were disabled for vanilla gameplay.")
+            .arg(restored));
+    });
+}
 
-    m_modsToRestore.clear();
+void LaunchWidget::restoreMods(const QStringList &modIds, std::function<void(int)> onDone) {
+    if (modIds.isEmpty() || !m_modManager) {
+        if (onDone) {
+            onDone(0);
+        }
+        return;
+    }
+
+    ModEnableProgress::run(m_modManager, m_modalManager, static_cast<int>(modIds.size()), tr("Restoring mods..."),
+        [this, modIds, onDone](ModEnableProgress::Done done) {
+        return m_modManager->setModsEnabledAsync(modIds, true, this,
+            [modIds, onDone, done](const ModManager::EnableOutcome &outcome) {
+            done();
+            if (onDone) {
+                onDone(outcome.ok() ? static_cast<int>(modIds.size()) : outcome.enabled);
+            }
+        });
+    });
 }
 
 void LaunchWidget::cancelWaitingForGameStart() {
