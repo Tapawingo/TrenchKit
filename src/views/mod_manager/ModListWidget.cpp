@@ -487,7 +487,7 @@ void ModListWidget::onModEnabledChanged(const QString &modId, bool enabled) {
     }
 
     // The row flips as soon as it is clicked; while its pak is still being copied the click is ignored.
-    if (m_enablingIds.contains(modId)) {
+    if (m_modManager->isEnabling(modId)) {
         return;
     }
 
@@ -501,7 +501,7 @@ void ModListWidget::onModEnabledChanged(const QString &modId, bool enabled) {
 void ModListWidget::enableModsInBackground(const QStringList &modIds, std::function<void()> onDone) {
     QStringList pending;
     for (const QString &id : modIds) {
-        if (!m_enablingIds.contains(id)) {
+        if (!m_modManager->isEnabling(id)) {
             pending.append(id);
         }
     }
@@ -511,18 +511,12 @@ void ModListWidget::enableModsInBackground(const QStringList &modIds, std::funct
         }
         return;
     }
-    for (const QString &id : std::as_const(pending)) {
-        m_enablingIds.insert(id);
-    }
 
     ModEnableProgress::run(m_modManager, m_modalManager, static_cast<int>(pending.size()), tr("Enabling mods..."),
         [this, pending, onDone](ModEnableProgress::Done done) {
         return m_modManager->setModsEnabledAsync(pending, true, this,
-            [this, pending, onDone, done](const ModManager::EnableOutcome &) {
+            [this, onDone, done](const ModManager::EnableOutcome &) {
             done();
-            for (const QString &id : pending) {
-                m_enablingIds.remove(id);
-            }
             refreshModList();
             if (onDone) {
                 onDone();

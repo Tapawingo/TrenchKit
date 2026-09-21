@@ -301,6 +301,10 @@ CancelTokenPtr ModManager::addModAsync(const QString &pakFilePath, const AddModP
 }
 
 bool ModManager::removeMod(const QString &modId) {
+    if (refuseWhileEnabling(modId)) {
+        return false;
+    }
+
     bool wasEnabled;
     QString filePath;
 
@@ -346,6 +350,10 @@ bool ModManager::removeMod(const QString &modId) {
 
 bool ModManager::prepareReplace(const QString &modId, const QString &newPakPath, const QString &newVersion,
                                 const QString &newFileId, const QDateTime &uploadDate, PendingReplace *pending) {
+    if (refuseWhileEnabling(modId)) {
+        return false;
+    }
+
     QString savedName;
     {
         QMutexLocker locker(&m_modsMutex);
@@ -686,6 +694,10 @@ bool ModManager::enableModBlocking(const QString &modId) {
 }
 
 bool ModManager::disableMod(const QString &modId) {
+    if (refuseWhileEnabling(modId)) {
+        return false;
+    }
+
     ModInfo modCopy;
     bool alreadyDisabled = false;
 
@@ -743,6 +755,10 @@ bool ModManager::disableAllMods() {
             }
         }
     }
+    // Mods still waiting to be enabled are included so the request is refused for them, not dropped.
+    for (const QString &id : std::as_const(m_enablingIds)) {
+        enabledIds.append(id);
+    }
     return disableMods(enabledIds);
 }
 
@@ -751,7 +767,17 @@ bool ModManager::disableMods(const QStringList &modIds) {
         return true;
     }
 
-    QSet<QString> idSet(modIds.begin(), modIds.end());
+    bool anyRefused = false;
+    QStringList allowed;
+    for (const QString &id : modIds) {
+        if (refuseWhileEnabling(id)) {
+            anyRefused = true;
+        } else {
+            allowed.append(id);
+        }
+    }
+
+    QSet<QString> idSet(allowed.begin(), allowed.end());
     QList<ModInfo> modsToProcess;
     {
         QMutexLocker locker(&m_modsMutex);
@@ -763,7 +789,7 @@ bool ModManager::disableMods(const QStringList &modIds) {
     }
 
     if (modsToProcess.isEmpty()) {
-        return true;
+        return !anyRefused;
     }
 
     bool anyFailed = false;
@@ -785,7 +811,7 @@ bool ModManager::disableMods(const QStringList &modIds) {
     saveMods();
     emit modsChanged();
 
-    return !anyFailed;
+    return !anyFailed && !anyRefused;
 }
 
 namespace {
@@ -857,6 +883,7 @@ EnableStepResult runEnableStep(const EnableStep &step, const QString &paksPath, 
 
 struct ModManager::EnableJob {
     QStringList ids;
+    QStringList claimed;
     QPointer<QObject> context;
     std::function<void(const EnableOutcome &)> onFinished;
     CancelTokenPtr token;
@@ -882,6 +909,17 @@ CancelTokenPtr ModManager::setModsEnabledAsync(const QStringList &modIds, bool e
         return job->token;
     }
 
+    {
+        const QSet<QString> wanted(modIds.begin(), modIds.end());
+        QMutexLocker locker(&m_modsMutex);
+        for (const ModInfo &mod : m_mods) {
+            if (wanted.contains(mod.id) && !mod.enabled && !m_enablingIds.contains(mod.id)) {
+                job->claimed.append(mod.id);
+                m_enablingIds.insert(mod.id);
+            }
+        }
+    }
+
     m_enableQueue.append(job);
     if (!m_enableRunning) {
         startNextEnableJob();
@@ -889,13 +927,44 @@ CancelTokenPtr ModManager::setModsEnabledAsync(const QStringList &modIds, bool e
     return job->token;
 }
 
+bool ModManager::isEnabling(const QString &modId) const {
+    return m_enablingIds.contains(modId);
+}
+
+void ModManager::releaseEnableClaims(const std::shared_ptr<EnableJob> &job) {
+    for (const QString &id : std::as_const(job->claimed)) {
+        m_enablingIds.remove(id);
+    }
+    job->claimed.clear();
+}
+
+bool ModManager::refuseWhileEnabling(const QString &modId) {
+    if (!m_enablingIds.contains(modId)) {
+        return false;
+    }
+
+    QString name = modId;
+    {
+        QMutexLocker locker(&m_modsMutex);
+        auto it = std::ranges::find_if(m_mods,
+                               [&modId](const ModInfo &mod) { return mod.id == modId; });
+        if (it != m_mods.end()) {
+            name = it->name;
+        }
+    }
+    emit errorOccurred(tr("\"%1\" is still being enabled. Try again once it is done.").arg(name));
+    return true;
+}
+
 void ModManager::startNextEnableJob() {
     while (!m_enableQueue.isEmpty()) {
         const std::shared_ptr<EnableJob> job = m_enableQueue.takeFirst();
         if (!job->context) {
+            releaseEnableClaims(job);
             continue;
         }
         if (job->token->isCancelled()) {
+            releaseEnableClaims(job);
             EnableOutcome outcome;
             outcome.cancelled = true;
             job->onFinished(outcome);
@@ -1002,6 +1071,7 @@ void ModManager::runEnableJob(const std::shared_ptr<EnableJob> &job) {
 }
 
 void ModManager::finishEnableJob(const std::shared_ptr<EnableJob> &job, const EnableWork &work) {
+    releaseEnableClaims(job);
     EnableOutcome outcome;
     QStringList enabledIds;
 
