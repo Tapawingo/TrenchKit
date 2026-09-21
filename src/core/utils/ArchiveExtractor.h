@@ -5,9 +5,11 @@
 #ifndef ARCHIVEEXTRACTOR_H
 #define ARCHIVEEXTRACTOR_H
 
+#include "CancelToken.h"
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <functional>
 
 /**
  * @brief Extracts pak files from a mod archive into a temporary directory.
@@ -30,13 +32,28 @@ public:
         QStringList pakFiles; ///< Absolute paths of the .pak files found inside the archive.
         QString tempDir;      ///< Temporary directory holding the extracted files; caller must call @c cleanupTempDir().
         QString error;        ///< Human-readable error description when @c success is false.
+        bool cancelled = false; ///< True if the extraction was stopped through its @c CancelToken.
     };
 
     /**
      * @brief Extracts all .pak files from @p zipPath into a new temporary directory.
      */
-    ExtractResult extractPakFiles(const QString &zipPath);
+    ExtractResult extractPakFiles(const QString &zipPath, const CancelToken *cancel = nullptr);
 
+    /// Receives the result of @c extractPakFilesAsync(); the caller must still clean up @c tempDir.
+    using ExtractCallback = std::function<void(const ExtractResult &)>;
+
+    /**
+     * @brief Runs @c extractPakFiles() on a worker thread so the UI stays responsive.
+     *
+     * @p onFinished is invoked on the thread that called this function, only while @p context
+     * is alive. If @p context is destroyed first the callback is dropped, the work is cancelled
+     * and any extracted files are removed, so nothing is leaked.
+     * @param token Optional token to share with other stages; a new one is created if null.
+     * @returns The token; cancelling it makes the callback receive a result with @c cancelled set.
+     */
+    static CancelTokenPtr extractPakFilesAsync(const QString &archivePath, QObject *context,
+                                               ExtractCallback onFinished, CancelTokenPtr token = {});
     /**
      * @brief Returns true if @p filePath has a supported archive extension or magic signature.
      */
@@ -60,8 +77,8 @@ private:
 
     ArchiveFormat detectFormat(const QString &filePath) const;
     ArchiveFormat detectFormatBySignature(const QString &filePath) const;
-    ExtractResult extractWithLibarchive(const QString &archivePath);
-    ExtractResult extractWithZip(const QString &archivePath);
+    ExtractResult extractWithLibarchive(const QString &archivePath, const CancelToken *cancel);
+    ExtractResult extractWithZip(const QString &archivePath, const CancelToken *cancel);
     bool isPakFile(const QString &fileName) const;
     QString createTempDir() const;
 };

@@ -5,11 +5,14 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QPointer>
+#include <QUuid>
 #include <QStandardPaths>
 #include <QDebug>
 #include <QRegularExpression>
 #include <QSet>
 #include "core/utils/ArchiveExtractor.h"
+#include "core/utils/AsyncRunner.h"
 #include "core/utils/ModManifestReader.h"
 #include "core/utils/PakFileReader.h"
 
@@ -39,7 +42,108 @@ QString ModManager::getPaksPath() const {
     return m_foxholeInstallPath + "/War/Content/Paks";
 }
 
-bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) {
+namespace {
+
+/// Copies @p source to @p target in chunks, stopping early when @p cancel is set. Removes @p target on failure.
+bool copyFileChunked(const QString &source, const QString &target, const CancelToken *cancel,
+                     QString *error, bool *cancelled) {
+    QFile in(source);
+    QFile out(target);
+
+    // Windows cannot delete a file that is still open, so close it before removing the partial copy.
+    const auto fail = [&](const QString &message, bool wasCancelled = false) {
+        out.close();
+        QFile::remove(target);
+        if (error) {
+            *error = message;
+        }
+        if (cancelled) {
+            *cancelled = wasCancelled;
+        }
+        return false;
+    };
+
+    if (!in.open(QIODevice::ReadOnly)) {
+        return fail(in.errorString());
+    }
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return fail(out.errorString());
+    }
+
+    constexpr qint64 kChunkSize = 4 * 1024 * 1024;
+    QByteArray chunk(kChunkSize, Qt::Uninitialized);
+    qint64 copied = 0;
+    for (;;) {
+        if (cancel && cancel->isCancelled()) {
+            return fail(QStringLiteral("Cancelled"), true);
+        }
+        const qint64 read = in.read(chunk.data(), chunk.size());
+        if (read < 0) {
+            return fail(in.errorString());
+        }
+        if (read == 0) {
+            break;
+        }
+        if (out.write(chunk.constData(), read) != read) {
+            return fail(out.errorString());
+        }
+        copied += read;
+    }
+
+    if (!out.flush() || out.error() != QFileDevice::NoError) {
+        return fail(out.errorString());
+    }
+    out.close();
+    if (copied != in.size() || QFileInfo(target).size() != copied) {
+        return fail(QStringLiteral("the copy is incomplete"));
+    }
+    return true;
+}
+
+} // namespace
+
+struct ModManager::StagedPak {
+    bool ok = false;
+    bool cancelled = false;
+    QString error;
+    ModManifest manifest;
+    bool hasManifest = false;
+};
+
+struct ModManager::PendingAdd {
+    ModInfo mod;
+    QString sourcePath;
+    QString destPath;
+    QString stagedPath;
+};
+
+struct ModManager::PendingReplace {
+    QString modId;
+    QString sourcePath;
+    QString stagedPath;
+    QString newVersion;
+    QString newFileId;
+    QDateTime uploadDate;
+};
+
+ModManager::StagedPak ModManager::stagePak(const QString &source, const QString &stagedPath,
+                                           const CancelToken *cancel) {
+    StagedPak result;
+    if (!copyFileChunked(source, stagedPath, cancel, &result.error, &result.cancelled)) {
+        return result;
+    }
+
+    QString manifestError;
+    result.hasManifest = ModManifestReader::readFromPak(source, &result.manifest, &manifestError);
+    if (!result.hasManifest && !manifestError.isEmpty()) {
+        qDebug() << "Manifest not loaded for" << source << ":" << manifestError;
+    }
+
+    result.ok = true;
+    return result;
+}
+
+bool ModManager::prepareAdd(const QString &pakFilePath, const AddModParams &params, PendingAdd *pending) {
     QFileInfo fileInfo(pakFilePath);
     if (!fileInfo.exists() || !fileInfo.isFile()) {
         emit errorOccurred(tr("Mod file does not exist: %1").arg(pakFilePath));
@@ -52,14 +156,7 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
         return false;
     }
 
-    ModManifest manifest;
-    QString manifestError;
-    const bool hasManifest = ModManifestReader::readFromPak(pakFilePath, &manifest, &manifestError);
-    if (!hasManifest && !manifestError.isEmpty()) {
-        qDebug() << "Manifest not loaded for" << pakFilePath << ":" << manifestError;
-    }
-
-    ModInfo mod;
+    ModInfo &mod = pending->mod;
     mod.id = ModInfo::generateId();
 
     if (!params.name.isEmpty()) {
@@ -73,12 +170,6 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
     mod.installDate = QDateTime::currentDateTime();
     mod.uploadDate = params.uploadDate;
     mod.enabled = false;
-
-    {
-        QMutexLocker locker(&m_modsMutex);
-        mod.priority = static_cast<int>(m_mods.size());
-    }
-
     mod.nexusModId = params.nexusModId;
     mod.nexusFileId = params.nexusFileId;
     mod.nexusUrl = params.nexusUrl;
@@ -89,7 +180,30 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
     mod.description = params.description;
     mod.version = params.version;
 
-    if (hasManifest) {
+    pending->sourcePath = pakFilePath;
+    pending->destPath = m_modsStoragePath + "/" + mod.fileName;
+    pending->stagedPath = m_modsStoragePath + "/" + mod.id + ".part";
+
+    if (QFile::exists(pending->destPath)) {
+        emit errorOccurred(tr("Mod already installed: \"%1\" is already in your mod library.").arg(mod.name));
+        return false;
+    }
+    return true;
+}
+
+bool ModManager::finishAdd(PendingAdd &pending, const StagedPak &staged) {
+    ModInfo &mod = pending.mod;
+
+    if (!staged.ok) {
+        QFile::remove(pending.stagedPath);
+        if (!staged.cancelled) {
+            emit errorOccurred(tr("Failed to copy mod file to storage: %1").arg(staged.error));
+        }
+        return false;
+    }
+
+    if (staged.hasManifest) {
+        const ModManifest &manifest = staged.manifest;
         mod.manifestId = manifest.id;
         mod.manifestAuthors = manifest.authors;
         mod.manifestTags = manifest.tags;
@@ -126,19 +240,21 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
         }
     }
 
-    QString destPath = m_modsStoragePath + "/" + mod.fileName;
-    if (QFile::exists(destPath)) {
+    // Another add may have claimed the name while this copy was running.
+    if (QFile::exists(pending.destPath)) {
+        QFile::remove(pending.stagedPath);
         emit errorOccurred(tr("Mod already installed: \"%1\" is already in your mod library.").arg(mod.name));
         return false;
     }
-    QFile srcFile(pakFilePath);
-    if (!srcFile.copy(destPath)) {
-        emit errorOccurred(tr("Failed to copy mod file to storage: %1").arg(srcFile.errorString()));
+    if (!QFile::rename(pending.stagedPath, pending.destPath)) {
+        QFile::remove(pending.stagedPath);
+        emit errorOccurred(tr("Failed to move mod file into storage."));
         return false;
     }
 
     {
         QMutexLocker locker(&m_modsMutex);
+        mod.priority = static_cast<int>(m_mods.size());
         m_mods.append(mod);
     }
     saveMods();
@@ -147,6 +263,38 @@ bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) 
 
     qDebug() << "Added mod:" << mod.name << "ID:" << mod.id;
     return true;
+}
+
+bool ModManager::addMod(const QString &pakFilePath, const AddModParams &params) {
+    PendingAdd pending;
+    if (!prepareAdd(pakFilePath, params, &pending)) {
+        return false;
+    }
+    return finishAdd(pending, stagePak(pending.sourcePath, pending.stagedPath, nullptr));
+}
+
+CancelTokenPtr ModManager::addModAsync(const QString &pakFilePath, const AddModParams &params,
+                                       QObject *context, std::function<void(bool)> onFinished) {
+    auto pending = std::make_shared<PendingAdd>();
+    if (!prepareAdd(pakFilePath, params, pending.get())) {
+        onFinished(false);
+        return nullptr;
+    }
+
+    QPointer<ModManager> self(this);
+    return runCancellable<StagedPak>(
+        context,
+        [pending](const CancelToken &cancel) {
+            return stagePak(pending->sourcePath, pending->stagedPath, &cancel);
+        },
+        [self, pending, onFinished = std::move(onFinished)](const StagedPak &staged) {
+            if (!self) {
+                QFile::remove(pending->stagedPath);
+                return;
+            }
+            onFinished(self->finishAdd(*pending, staged));
+        },
+        [pending](const StagedPak &) { QFile::remove(pending->stagedPath); });
 }
 
 bool ModManager::removeMod(const QString &modId) {
@@ -193,14 +341,9 @@ bool ModManager::removeMod(const QString &modId) {
     return true;
 }
 
-bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
-                            const QString &newVersion, const QString &newFileId,
-                            const QDateTime &uploadDate) {
-    bool wasEnabled;
-    int savedPriority;
+bool ModManager::prepareReplace(const QString &modId, const QString &newPakPath, const QString &newVersion,
+                                const QString &newFileId, const QDateTime &uploadDate, PendingReplace *pending) {
     QString savedName;
-    QString fileName;
-
     {
         QMutexLocker locker(&m_modsMutex);
         auto it = std::ranges::find_if(m_mods,
@@ -211,11 +354,7 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
             emit errorOccurred(tr("Mod not found."));
             return false;
         }
-
-        wasEnabled = it->enabled;
-        savedPriority = it->priority;
         savedName = it->name;
-        fileName = it->fileName;
     }
 
     const QFileInfo newFileInfo(newPakPath);
@@ -230,19 +369,53 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
         return false;
     }
 
-    // Stage the copy first so a failed copy can never cost the user the mod they already have.
-    const QString destPath = m_modsStoragePath + "/" + fileName;
-    const QString stagedPath = destPath + ".new";
-    QFile::remove(stagedPath);
-    if (!QFile::copy(newPakPath, stagedPath) || QFileInfo(stagedPath).size() != newFileInfo.size()) {
-        QFile::remove(stagedPath);
-        emit errorOccurred(tr("Failed to copy new mod file to storage"));
+    pending->modId = modId;
+    pending->sourcePath = newPakPath;
+    pending->stagedPath = m_modsStoragePath + "/" + modId + "." + QUuid::createUuid().toString(QUuid::Id128)
+                          + ".update.part";
+    pending->newVersion = newVersion;
+    pending->newFileId = newFileId;
+    pending->uploadDate = uploadDate;
+    return true;
+}
+
+bool ModManager::finishReplace(const PendingReplace &pending, const StagedPak &staged) {
+    if (!staged.ok) {
+        QFile::remove(pending.stagedPath);
+        if (!staged.cancelled) {
+            emit errorOccurred(tr("Failed to copy new mod file to storage: %1").arg(staged.error));
+        }
         return false;
     }
 
+    // The mod may have changed while the copy ran, so its state is read now, not earlier.
+    const QString &modId = pending.modId;
+    bool wasEnabled;
+    int savedPriority;
+    QString savedName;
+    QString fileName;
+    {
+        QMutexLocker locker(&m_modsMutex);
+        auto it = std::ranges::find_if(m_mods,
+                               [&modId](const ModInfo &mod) { return mod.id == modId; });
+
+        if (it == m_mods.end()) {
+            QFile::remove(pending.stagedPath);
+            emit errorOccurred(tr("Mod not found."));
+            return false;
+        }
+
+        wasEnabled = it->enabled;
+        savedPriority = it->priority;
+        savedName = it->name;
+        fileName = it->fileName;
+    }
+
+    const QString destPath = m_modsStoragePath + "/" + fileName;
+
     if (wasEnabled) {
         if (!disableMod(modId)) {
-            QFile::remove(stagedPath);
+            QFile::remove(pending.stagedPath);
             emit errorOccurred(tr("Failed to disable mod before replacement"));
             return false;
         }
@@ -263,22 +436,15 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
         enableMod(modId);
     };
 
-    ModManifest manifest;
-    QString manifestError;
-    const bool hasManifest = ModManifestReader::readFromPak(newPakPath, &manifest, &manifestError);
-    if (!hasManifest && !manifestError.isEmpty()) {
-        qDebug() << "Manifest not loaded for" << newPakPath << ":" << manifestError;
-    }
-
     if (QFile::exists(destPath) && !QFile::remove(destPath)) {
-        QFile::remove(stagedPath);
+        QFile::remove(pending.stagedPath);
         emit errorOccurred(tr("Failed to remove old mod file"));
         restoreEnabled();
         return false;
     }
 
-    if (!QFile::rename(stagedPath, destPath)) {
-        QFile::remove(stagedPath);
+    if (!QFile::rename(pending.stagedPath, destPath)) {
+        QFile::remove(pending.stagedPath);
         emit errorOccurred(tr("Failed to move new mod file into storage"));
         return false;
     }
@@ -288,12 +454,12 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
         auto it = std::ranges::find_if(m_mods,
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
         if (it != m_mods.end()) {
-            it->version = newVersion;
-            it->nexusFileId = newFileId;
-            it->uploadDate = uploadDate;
+            it->version = pending.newVersion;
+            it->nexusFileId = pending.newFileId;
+            it->uploadDate = pending.uploadDate;
             it->installDate = QDateTime::currentDateTime();
-            if (hasManifest && !manifest.name.isEmpty()) {
-                it->name = manifest.name;
+            if (staged.hasManifest && !staged.manifest.name.isEmpty()) {
+                it->name = staged.manifest.name;
             }
 
             if (wasEnabled) {
@@ -311,15 +477,75 @@ bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
     saveMods();
     emit modsChanged();
 
-    qDebug() << "Replaced mod:" << savedName << "version" << newVersion;
+    qDebug() << "Replaced mod:" << savedName << "version" << pending.newVersion;
     return true;
 }
 
-bool ModManager::replaceModFromFile(const QString &modId, const QString &filePath,
-                                    const QString &newVersion, const QString &newFileId,
-                                    const QDateTime &uploadDate) {
+bool ModManager::replaceMod(const QString &modId, const QString &newPakPath,
+                            const QString &newVersion, const QString &newFileId,
+                            const QDateTime &uploadDate) {
+    PendingReplace pending;
+    if (!prepareReplace(modId, newPakPath, newVersion, newFileId, uploadDate, &pending)) {
+        return false;
+    }
+    return finishReplace(pending, stagePak(pending.sourcePath, pending.stagedPath, nullptr));
+}
+
+CancelTokenPtr ModManager::replaceStaged(const QString &modId, const QString &newPakPath,
+                                         const QString &newVersion, const QString &newFileId,
+                                         const QDateTime &uploadDate, QObject *context,
+                                         std::function<void(bool)> onFinished, CancelTokenPtr token,
+                                         std::shared_ptr<void> keepAlive) {
+    auto pending = std::make_shared<PendingReplace>();
+    if (!prepareReplace(modId, newPakPath, newVersion, newFileId, uploadDate, pending.get())) {
+        onFinished(false);
+        return nullptr;
+    }
+
+    // keepAlive (e.g. the unpacked archive) is held by both handlers, so it outlives the copy even
+    // when the context is destroyed mid-way.
+    QPointer<ModManager> self(this);
+    return runCancellable<StagedPak>(
+        context,
+        [pending](const CancelToken &cancel) {
+            return stagePak(pending->sourcePath, pending->stagedPath, &cancel);
+        },
+        [self, pending, keepAlive, onFinished = std::move(onFinished)](const StagedPak &staged) {
+            if (!self) {
+                QFile::remove(pending->stagedPath);
+                return;
+            }
+            onFinished(self->finishReplace(*pending, staged));
+        },
+        [pending, keepAlive](const StagedPak &) { QFile::remove(pending->stagedPath); },
+        std::move(token));
+}
+
+CancelTokenPtr ModManager::replaceModAsync(const QString &modId, const QString &newPakPath,
+                                           const QString &newVersion, const QString &newFileId,
+                                           const QDateTime &uploadDate, QObject *context,
+                                           std::function<void(bool)> onFinished) {
+    return replaceStaged(modId, newPakPath, newVersion, newFileId, uploadDate, context,
+                         std::move(onFinished), {}, {});
+}
+
+namespace {
+
+/// Removes an unpacked archive once every user of it has finished.
+struct TempDirGuard {
+    explicit TempDirGuard(QString dir) : path(std::move(dir)) {}
+    ~TempDirGuard() { ArchiveExtractor::cleanupTempDir(path); }
+    QString path;
+};
+
+} // namespace
+
+CancelTokenPtr ModManager::replaceModFromFile(const QString &modId, const QString &filePath,
+                                              const QString &newVersion, const QString &newFileId,
+                                              const QDateTime &uploadDate, QObject *context,
+                                              std::function<void(bool)> onFinished) {
     if (!ArchiveExtractor::isArchiveFile(filePath)) {
-        return replaceMod(modId, filePath, newVersion, newFileId, uploadDate);
+        return replaceModAsync(modId, filePath, newVersion, newFileId, uploadDate, context, std::move(onFinished));
     }
 
     QString currentFileName;
@@ -329,45 +555,62 @@ bool ModManager::replaceModFromFile(const QString &modId, const QString &filePat
                                [&modId](const ModInfo &mod) { return mod.id == modId; });
         if (it == m_mods.end()) {
             emit errorOccurred(tr("Mod not found."));
-            return false;
+            onFinished(false);
+            return nullptr;
         }
         currentFileName = it->fileName;
     }
 
-    ArchiveExtractor extractor;
-    const auto extracted = extractor.extractPakFiles(filePath);
-    if (!extracted.success) {
-        emit errorOccurred(tr("Could not unpack the update: %1").arg(extracted.error));
-        return false;
-    }
+    // One token covers unpacking and the copy that follows, so a single cancel stops both.
+    const auto token = std::make_shared<CancelToken>();
+    QPointer<ModManager> self(this);
+    ArchiveExtractor::extractPakFilesAsync(filePath, context,
+        [self, context = QPointer<QObject>(context), token, modId, currentFileName, newVersion, newFileId,
+         uploadDate, onFinished = std::move(onFinished)](const ArchiveExtractor::ExtractResult &extracted) {
+        if (!self || !context) {
+            ArchiveExtractor::cleanupTempDir(extracted.tempDir);
+            return;
+        }
+        if (extracted.cancelled) {
+            onFinished(false);
+            return;
+        }
+        if (!extracted.success) {
+            emit self->errorOccurred(tr("Could not unpack the update: %1").arg(extracted.error));
+            onFinished(false);
+            return;
+        }
 
-    QString chosen;
-    if (extracted.pakFiles.size() == 1) {
-        chosen = extracted.pakFiles.first();
-    } else {
-        for (const QString &pak : extracted.pakFiles) {
-            if (QFileInfo(pak).fileName().compare(currentFileName, Qt::CaseInsensitive) == 0) {
-                chosen = pak;
-                break;
+        const auto unpacked = std::make_shared<TempDirGuard>(extracted.tempDir);
+
+        QString chosen;
+        if (extracted.pakFiles.size() == 1) {
+            chosen = extracted.pakFiles.first();
+        } else {
+            for (const QString &pak : extracted.pakFiles) {
+                if (QFileInfo(pak).fileName().compare(currentFileName, Qt::CaseInsensitive) == 0) {
+                    chosen = pak;
+                    break;
+                }
             }
         }
-    }
 
-    bool replaced = false;
-    if (chosen.isEmpty()) {
-        QStringList names;
-        for (const QString &pak : extracted.pakFiles) {
-            names.append(QFileInfo(pak).fileName());
+        if (chosen.isEmpty()) {
+            QStringList names;
+            for (const QString &pak : extracted.pakFiles) {
+                names.append(QFileInfo(pak).fileName());
+            }
+            emit self->errorOccurred(tr("The update contains several .pak files (%1) and none matches \"%2\". "
+                                        "Remove the mod and add it again to choose which one to install.")
+                                         .arg(names.join(QStringLiteral(", ")), currentFileName));
+            onFinished(false);
+            return;
         }
-        emit errorOccurred(tr("The update contains several .pak files (%1) and none matches \"%2\". "
-                              "Remove the mod and add it again to choose which one to install.")
-                               .arg(names.join(QStringLiteral(", ")), currentFileName));
-    } else {
-        replaced = replaceMod(modId, chosen, newVersion, newFileId, uploadDate);
-    }
 
-    ArchiveExtractor::cleanupTempDir(extracted.tempDir);
-    return replaced;
+        self->replaceStaged(modId, chosen, newVersion, newFileId, uploadDate, context.data(), onFinished, token,
+                            unpacked);
+    }, token);
+    return token;
 }
 
 bool ModManager::enableMod(const QString &modId) {

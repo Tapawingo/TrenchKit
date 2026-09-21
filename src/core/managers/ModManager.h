@@ -6,12 +6,15 @@
 #define MODMANAGER_H
 
 #include "core/models/ModInfo.h"
+#include "core/utils/CancelToken.h"
 #include <QObject>
 #include <QList>
 #include <QMap>
 #include <QMutex>
 #include <QString>
 #include <QStringList>
+#include <functional>
+#include <memory>
 
 /**
  * @brief Manages the mod list, load order, and pak file deployment.
@@ -66,6 +69,17 @@ public:
     bool addMod(const QString &pakFilePath, const AddModParams &params = {});
 
     /**
+     * @brief Like @c addMod(), but copies the pak into storage on a worker thread.
+     *
+     * Validation problems are reported at once: @p onFinished(false) is called before this returns and
+     * the result is null. Otherwise @p onFinished receives the outcome on the calling thread, and not at
+     * all if @p context is destroyed first (the copy is then cancelled and nothing is added).
+     * @returns A token that cancels the copy; the callback then receives false without an error signal.
+     */
+    CancelTokenPtr addModAsync(const QString &pakFilePath, const AddModParams &params,
+                               QObject *context, std::function<void(bool)> onFinished);
+
+    /**
      * @brief Removes a mod and deletes its pak from storage and the paks folder.
      */
     bool removeMod(const QString &modId);
@@ -81,14 +95,26 @@ public:
                    const QDateTime &uploadDate = QDateTime());
 
     /**
+     * @brief Like @c replaceMod(), but copies the new pak on a worker thread; see @c addModAsync() for the callback rules.
+     */
+    CancelTokenPtr replaceModAsync(const QString &modId, const QString &newPakPath,
+                                   const QString &newVersion, const QString &newFileId,
+                                   const QDateTime &uploadDate, QObject *context,
+                                   std::function<void(bool)> onFinished);
+
+    /**
      * @brief Like @c replaceMod(), but accepts a downloaded archive as well as a bare pak.
      *
-     * An archive is extracted first; if it holds several paks the one named like the
-     * mod's current file is used. Fails (after emitting @c errorOccurred) rather than guessing.
+     * An archive is extracted on a worker thread first; if it holds several paks the one named
+     * like the mod's current file is used. Fails (after emitting @c errorOccurred) rather than guessing.
+     * @p onFinished receives the outcome on the calling thread: immediately for a bare pak, later for
+     * an archive, and not at all if @p context is destroyed first (the mod is then left untouched).
+     * @returns A token that cancels unpacking and copying; null if the outcome was already reported.
      */
-    bool replaceModFromFile(const QString &modId, const QString &filePath,
+    CancelTokenPtr replaceModFromFile(const QString &modId, const QString &filePath,
                             const QString &newVersion, const QString &newFileId,
-                            const QDateTime &uploadDate = QDateTime());
+                            const QDateTime &uploadDate, QObject *context,
+                            std::function<void(bool)> onFinished);
 
     /**
      * @brief Copies the mod's pak into the Foxhole paks folder.
@@ -188,6 +214,22 @@ signals:
     void errorOccurred(const QString &error);
 
 private:
+    struct StagedPak;
+    struct PendingAdd;
+    struct PendingReplace;
+
+    /// Copies @p source to @p stagedPath and reads its manifest; safe to run on any thread.
+    static StagedPak stagePak(const QString &source, const QString &stagedPath, const CancelToken *cancel);
+    bool prepareAdd(const QString &pakFilePath, const AddModParams &params, PendingAdd *pending);
+    bool finishAdd(PendingAdd &pending, const StagedPak &staged);
+    bool prepareReplace(const QString &modId, const QString &newPakPath, const QString &newVersion,
+                        const QString &newFileId, const QDateTime &uploadDate, PendingReplace *pending);
+    bool finishReplace(const PendingReplace &pending, const StagedPak &staged);
+    CancelTokenPtr replaceStaged(const QString &modId, const QString &newPakPath, const QString &newVersion,
+                                 const QString &newFileId, const QDateTime &uploadDate, QObject *context,
+                                 std::function<void(bool)> onFinished, CancelTokenPtr token,
+                                 std::shared_ptr<void> keepAlive);
+
     QString getModFilePath(const QString &modId) const;
     QString getMetadataFilePath() const;
     bool copyModToPaks(const ModInfo &mod);

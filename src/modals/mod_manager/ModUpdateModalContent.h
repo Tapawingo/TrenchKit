@@ -5,6 +5,7 @@
 #ifndef MODUPDATEMODALCONTENT_H
 #define MODUPDATEMODALCONTENT_H
 
+#include "core/utils/CancelToken.h"
 #include "common/modals/BaseModalContent.h"
 #include "core/models/ModInfo.h"
 #include "core/models/ModUpdateInfo.h"
@@ -45,6 +46,7 @@ private slots:
 private:
     void setupUi();
     void startDownload();
+    void installFile(const QString &filePath, bool deleteWhenDone);
     QString generateTempPath(const QString &fileName) const;
 
     ModInfo m_mod;
@@ -60,6 +62,8 @@ private:
     QPushButton *m_cancelButton;
 
     QString m_downloadedPath;
+    CancelTokenPtr m_installToken;
+    bool m_cancelled = false;
 };
 
 #endif // MODUPDATEMODALCONTENT_H

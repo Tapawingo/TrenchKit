@@ -110,22 +110,30 @@ void ItchModUpdateModalContent::onDownloadProgress(qint64 received, qint64 total
 void ItchModUpdateModalContent::onDownloadFinished(const QString &savePath) {
     m_downloadedPath = savePath;
     m_statusLabel->setText(tr("Installing update..."));
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(100);
+    m_progressBar->setRange(0, 0);
 
-    if (!m_modManager->replaceModFromFile(m_mod.id, savePath, m_updateInfo.availableVersion,
-                                  m_updateInfo.availableUploadId, m_updateInfo.availableUploadDate)) {
-        MessageModal::warning(m_modalManager, tr("Error"), tr("Failed to install update."));
-        reject();
-        return;
-    }
+    m_installToken = m_modManager->replaceModFromFile(m_mod.id, savePath, m_updateInfo.availableVersion,
+                                     m_updateInfo.availableUploadId, m_updateInfo.availableUploadDate,
+                                     this, [this](bool installed) {
+        if (m_cancelled) {
+            return;
+        }
+        m_progressBar->setRange(0, 100);
+        m_progressBar->setValue(100);
 
-    ModInfo updated = m_modManager->getMod(m_mod.id);
-    updated.itchUploadId = m_updateInfo.availableUploadId;
-    m_modManager->updateModMetadata(updated);
+        if (!installed) {
+            MessageModal::warning(m_modalManager, tr("Error"), tr("Failed to install update."));
+            reject();
+            return;
+        }
 
-    MessageModal::information(m_modalManager, tr("Success"), tr("Mod updated successfully!"));
-    accept();
+        ModInfo updated = m_modManager->getMod(m_mod.id);
+        updated.itchUploadId = m_updateInfo.availableUploadId;
+        m_modManager->updateModMetadata(updated);
+
+        MessageModal::information(m_modalManager, tr("Success"), tr("Mod updated successfully!"));
+        accept();
+    });
 }
 
 void ItchModUpdateModalContent::onError(const QString &error) {
@@ -134,6 +142,10 @@ void ItchModUpdateModalContent::onError(const QString &error) {
 }
 
 void ItchModUpdateModalContent::onCancelClicked() {
+    m_cancelled = true;
+    if (m_installToken) {
+        m_installToken->cancel();
+    }
     m_itchClient->cancelDownload();
     reject();
 }
