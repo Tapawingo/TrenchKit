@@ -1027,6 +1027,32 @@ private slots:
         QVERIFY(lib.paksFiles("*.part").isEmpty());
     }
 
+    void testReorderingRenamesPaksInsteadOfCopyingThem() {
+        ModLibrary lib;
+        QVERIFY(lib.storage.isValid() && lib.install.isValid() && lib.work.isValid());
+        const QByteArray bytesA = pakBytesOfSize(2 << 20);
+        const QByteArray bytesB = pakBytesOfSize(3 << 20);
+        const QString idA = lib.addMod("Alpha", bytesA);
+        const QString idB = lib.addMod("Bravo", bytesB);
+        QVERIFY(lib.manager.enableMod(idA));
+        QVERIFY(lib.manager.enableMod(idB));
+
+        const ModInfo before = lib.manager.getMod(idA);
+        const QDateTime born = QFileInfo(lib.paksPath() + "/" + before.numberedFileName).birthTime();
+        QTest::qWait(50);
+
+        QVERIFY(lib.manager.setModPriority(idA, 5));
+        const ModInfo after = lib.manager.getMod(idA);
+        QVERIFY(after.numberedFileName != before.numberedFileName);
+        QVERIFY(!QFile::exists(lib.paksPath() + "/" + before.numberedFileName));
+        QCOMPARE(readAll(lib.paksPath() + "/" + after.numberedFileName), bytesA);
+        QCOMPARE(readAll(lib.paksPath() + "/" + lib.manager.getMod(idB).numberedFileName), bytesB);
+        QCOMPARE(lib.paksFiles().size(), 2);
+        if (born.isValid()) {
+            QCOMPARE(QFileInfo(lib.paksPath() + "/" + after.numberedFileName).birthTime(), born);
+        }
+    }
+
     void testUpdateArchiveExtractorRejectsTruncatedArchive() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
