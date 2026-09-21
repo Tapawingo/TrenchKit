@@ -36,6 +36,7 @@ public:
      * @brief Extracts all .pak files from @p zipPath into a new temporary directory.
      */
     ExtractResult extractPakFiles(const QString &zipPath);
+
     /**
      * @brief Returns true if @p filePath has a supported archive extension or magic signature.
      */
@@ -43,6 +44,9 @@ public:
 
     /**
      * @brief Deletes the temporary directory created by @c extractPakFiles().
+     *
+     * Does nothing for an empty path (a failed extraction) or for any directory that
+     * @c extractPakFiles() did not create.
      */
     static void cleanupTempDir(const QString &tempDir);
 
