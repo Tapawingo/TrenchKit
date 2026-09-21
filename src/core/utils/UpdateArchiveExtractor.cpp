@@ -56,7 +56,19 @@ bool UpdateArchiveExtractor::extractWithLibarchive(const QString &archivePath,
     }
 
     struct archive_entry *entry;
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+    for (;;) {
+        const int headerResult = archive_read_next_header(a, &entry);
+        if (headerResult == ARCHIVE_EOF) {
+            break;
+        }
+        if (headerResult < ARCHIVE_WARN) {
+            if (error) {
+                *error = QString("Failed to read archive: %1").arg(archive_error_string(a));
+            }
+            archive_read_free(a);
+            return false;
+        }
+
         const char *entryName = archive_entry_pathname(entry);
         if (!entryName) {
             continue;
@@ -123,9 +135,9 @@ bool UpdateArchiveExtractor::extractWithLibarchive(const QString &archivePath,
             return false;
         }
 
-        if (archive_entry_size_is_set(entry) && archive_entry_size(entry) > 0 && totalWritten == 0) {
+        if (archive_entry_size_is_set(entry) && archive_entry_size(entry) != totalWritten) {
             if (error) {
-                *error = "Archive entry contained no data.";
+                *error = QString("Archive entry %1 is incomplete.").arg(cleanPath);
             }
             outFile.close();
             archive_read_free(a);
@@ -170,7 +182,11 @@ bool UpdateArchiveExtractor::extractWithZip(const QString &zipPath,
     const int totalEntries = zip_entries_total(zip);
     for (int i = 0; i < totalEntries; ++i) {
         if (zip_entry_openbyindex(zip, i) < 0) {
-            continue;
+            zip_close(zip);
+            if (error) {
+                *error = QString("Failed to read archive entry %1.").arg(i);
+            }
+            return false;
         }
 
         const char *entryName = zip_entry_name(zip);
