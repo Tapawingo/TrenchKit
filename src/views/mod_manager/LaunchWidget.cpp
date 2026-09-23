@@ -1,5 +1,6 @@
 #include "LaunchWidget.h"
 #include "core/managers/ModManager.h"
+#include "core/utils/FoxholeDetector.h"
 #include "core/utils/Theme.h"
 #include "common/modals/ModalManager.h"
 #include "common/modals/MessageModal.h"
@@ -14,10 +15,6 @@
 #include <QDir>
 #include <QFile>
 #include <QTimer>
-
-#ifdef Q_OS_LINUX
-static constexpr int FOXHOLE_STEAM_APP_ID = 1454690;
-#endif
 
 LaunchWidget::LaunchWidget(QWidget *parent)
     : QWidget(parent)
@@ -111,7 +108,7 @@ void LaunchWidget::onLaunchWithMods() {
         emit errorOccurred(tr("Foxhole installation not found. Please check your installation path."));
         return;
     }
-    QDesktopServices::openUrl(QUrl(QStringLiteral("steam://run/%1").arg(FOXHOLE_STEAM_APP_ID)));
+    QDesktopServices::openUrl(QUrl(QStringLiteral("steam://run/%1").arg(FoxholeDetector::FOXHOLE_APP_ID)));
     emit gameLaunched(true);
     return;
 #endif
@@ -160,7 +157,7 @@ void LaunchWidget::onLaunchWithoutMods() {
         }
 
 #ifdef Q_OS_LINUX
-        QDesktopServices::openUrl(QUrl(QStringLiteral("steam://run/%1").arg(FOXHOLE_STEAM_APP_ID)));
+        QDesktopServices::openUrl(QUrl(QStringLiteral("steam://run/%1").arg(FoxholeDetector::FOXHOLE_APP_ID)));
         m_launchTimer.start();
         emit gameLaunched(false);
 #else
