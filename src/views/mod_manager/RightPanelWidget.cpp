@@ -59,6 +59,8 @@ void RightPanelWidget::setupUi() {
 void RightPanelWidget::setupConnections() {
     connect(m_actionsWidget, &ActionsWidget::addModRequested,
             this, &RightPanelWidget::addModRequested);
+    connect(m_actionsWidget, &ActionsWidget::browseModsRequested,
+            this, &RightPanelWidget::browseModsRequested);
     connect(m_actionsWidget, &ActionsWidget::removeModRequested,
             this, &RightPanelWidget::removeModRequested);
     connect(m_actionsWidget, &ActionsWidget::moveUpRequested,

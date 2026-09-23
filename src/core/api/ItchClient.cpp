@@ -1,5 +1,6 @@
 #include "ItchClient.h"
 #include <QSettings>
+#include <QStringList>
 #include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -87,12 +88,17 @@ void ItchClient::getGameId(const QString &creator, const QString &gameName) {
         QString gameId = QString::number(gameObj["id"].toInt());
         QString title = gameObj["title"].toString();
 
-        // Extract author from user object
-        QString author;
-        if (gameObj.contains("user") && gameObj["user"].isObject()) {
-            QJsonObject userObj = gameObj["user"].toObject();
-            author = userObj["name"].toString();
+        // Creators are under "authors" (an array), not a "user" object.
+        QStringList authorNames;
+        if (gameObj.contains("authors") && gameObj["authors"].isArray()) {
+            for (const QJsonValue &value : gameObj["authors"].toArray()) {
+                const QString name = value.toObject()[QStringLiteral("name")].toString();
+                if (!name.isEmpty()) {
+                    authorNames.append(name);
+                }
+            }
         }
+        QString author = authorNames.join(QStringLiteral(", "));
 
         emit gameIdReceived(gameId, title, author);
         reply->deleteLater();

@@ -8,6 +8,7 @@
 #include "views/mod_manager/BackupWidget.h"
 #include "views/mod_manager/LaunchWidget.h"
 #include "views/settings/SettingsWidget.h"
+#include "views/mod_manager/BrowseModsWidget.h"
 #include "core/utils/FoxholeDetector.h"
 #include "core/utils/UpdateArchiveExtractor.h"
 #include "core/managers/ModManager.h"
@@ -88,6 +89,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupModList();
     setupRightPanel();
     setupSettingsOverlay();
+    setupBrowseModsPage();
     m_globalSearchShortcut = new QShortcut(QKeySequence::Find, this);
     m_globalSearchShortcut->setContext(Qt::ApplicationShortcut);
     connect(m_globalSearchShortcut, &QShortcut::activated, this, [this]() {
@@ -97,8 +99,8 @@ MainWindow::MainWindow(QWidget *parent)
         if (m_modalManager->hasOpenModal()) {
             return;
         }
-        if (ui->bodyStack && m_settingsPage &&
-            ui->bodyStack->currentWidget() == m_settingsPage) {
+        if (ui->bodyStack && ((m_settingsPage && ui->bodyStack->currentWidget() == m_settingsPage) ||
+                             (m_browsePage && ui->bodyStack->currentWidget() == m_browsePage))) {
             return;
         }
         m_modListWidget->activateSearch();
@@ -356,6 +358,8 @@ void MainWindow::setupRightPanel() {
 
     connect(m_rightPanelWidget, &RightPanelWidget::addModRequested,
             m_modListWidget, &ModListWidget::onAddModClicked);
+    connect(m_rightPanelWidget, &RightPanelWidget::browseModsRequested,
+            this, &MainWindow::onBrowseModsClicked);
     connect(m_rightPanelWidget, &RightPanelWidget::removeModRequested,
             m_modListWidget, &ModListWidget::onRemoveModClicked);
     connect(m_rightPanelWidget, &RightPanelWidget::moveUpRequested,
@@ -441,6 +445,23 @@ void MainWindow::setupSettingsOverlay() {
             m_updater->checkForUpdates();
         }
     });
+}
+
+void MainWindow::setupBrowseModsPage() {
+    m_browsePage = ui->browsePage;
+    if (!m_browsePage) {
+        return;
+    }
+    auto *browseLayout = ui->browseLayout;
+    if (!browseLayout) {
+        browseLayout = new QVBoxLayout(m_browsePage);
+    }
+    m_browseModsWidget = new BrowseModsWidget(m_browsePage);
+    m_browseModsWidget->setServices(m_nexusClient, m_itchClient, m_modManager, m_modalManager);
+    browseLayout->addWidget(m_browseModsWidget);
+
+    connect(m_browseModsWidget, &BrowseModsWidget::backRequested,
+            this, &MainWindow::hideBrowseModsPage);
 }
 
 void MainWindow::loadSettings() {
@@ -615,6 +636,10 @@ void MainWindow::onUnregisteredModsDetectionComplete() {
 
 void MainWindow::onSettingsClicked() {
     showSettingsOverlay();
+}
+
+void MainWindow::onBrowseModsClicked() {
+    showBrowseModsPage();
 }
 
 void MainWindow::onSettingsApplied(bool autoCheck) {
@@ -990,5 +1015,18 @@ void MainWindow::showSettingsOverlay() {
 
 void MainWindow::hideSettingsOverlay() {
     if (!m_settingsPage || !ui->bodyStack || !ui->mainPage) return;
+    ui->bodyStack->setCurrentWidget(ui->mainPage);
+}
+
+void MainWindow::showBrowseModsPage() {
+    if (!m_browsePage || !ui->bodyStack || !ui->mainPage) return;
+    if (m_browseModsWidget) {
+        m_browseModsWidget->resetToDefaultSource();
+    }
+    ui->bodyStack->setCurrentWidget(m_browsePage);
+}
+
+void MainWindow::hideBrowseModsPage() {
+    if (!m_browsePage || !ui->bodyStack || !ui->mainPage) return;
     ui->bodyStack->setCurrentWidget(ui->mainPage);
 }
