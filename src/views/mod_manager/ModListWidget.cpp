@@ -23,6 +23,7 @@
 #include "core/models/NexusFileInfo.h"
 #include "core/services/ModConflictDetector.h"
 #include "common/modals/BaseModalContent.h"
+#include <QDebug>
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QHBoxLayout>
@@ -197,7 +198,6 @@ void ModListWidget::refreshModList() {
     if (!m_modManager) {
         return;
     }
-
     m_updating = true;
 
     int currentRow = getSelectedRow();
