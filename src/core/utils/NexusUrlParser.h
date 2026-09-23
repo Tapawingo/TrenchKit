@@ -33,6 +33,24 @@ public:
      */
     static ParseResult parseUrl(const QString &url);
 
+    /**
+     * @brief Result of parsing an nxm:// "Mod Manager Download" link.
+     */
+    struct NxmResult {
+        bool isValid = false;
+        QString gameDomain;
+        QString modId;
+        QString fileId;
+        QString key;     ///< Validation key; passed back to download_link.json to redeem the link.
+        QString expires; ///< Unix timestamp the key is valid until.
+        QString error;
+    };
+
+    /**
+     * @brief Parses an @c nxm:// link (as intercepted from the embedded browser).
+     */
+    static NxmResult parseNxmUrl(const QString &url);
+
 private:
     NexusUrlParser() = delete;
 };

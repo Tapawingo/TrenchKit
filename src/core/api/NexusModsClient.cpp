@@ -1,6 +1,7 @@
 #include "NexusModsClient.h"
 #include <QSettings>
 #include <QNetworkRequest>
+#include <QUrlQuery>
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -167,7 +168,8 @@ void NexusModsClient::getModFiles(const QString &modId) {
     });
 }
 
-void NexusModsClient::getDownloadLink(const QString &modId, const QString &fileId) {
+void NexusModsClient::getDownloadLink(const QString &modId, const QString &fileId,
+                                      const QString &key, const QString &expires) {
     if (m_linkReply) {
         m_linkReply->abort();
         m_linkReply->deleteLater();
@@ -175,6 +177,13 @@ void NexusModsClient::getDownloadLink(const QString &modId, const QString &fileI
 
     QUrl url(QStringLiteral("%1/games/%2/mods/%3/files/%4/download_link.json")
                 .arg(API_BASE, GAME_DOMAIN, modId, fileId));
+
+    if (!key.isEmpty() && !expires.isEmpty()) {
+        QUrlQuery query;
+        query.addQueryItem(QStringLiteral("key"), key);
+        query.addQueryItem(QStringLiteral("expires"), expires);
+        url.setQuery(query);
+    }
 
     m_linkReply = m_nam.get(makeRequest(url));
 

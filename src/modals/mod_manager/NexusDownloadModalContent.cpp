@@ -6,6 +6,7 @@
 #include "core/api/NexusModsAuth.h"
 #include "core/utils/NexusUrlParser.h"
 #include "core/utils/Theme.h"
+#include "common/widgets/BrowserWidget.h"
 #include <algorithm>
 #include <QEvent>
 #include <QPlainTextEdit>
@@ -15,7 +16,6 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFileDialog>
 #include <QStandardPaths>
 #include <QDir>
 #include <QDesktopServices>
@@ -34,6 +34,7 @@ NexusDownloadModalContent::NexusDownloadModalContent(NexusModsClient *client,
     setTitle(tr("Download from Nexus Mods"));
     setupUi();
     setPreferredSize(QSize(500, 400));
+    // Widened by showBrowserPage() when the embedded browser is needed.
 
     connect(m_client, &NexusModsClient::modInfoReceived, this, &NexusDownloadModalContent::onModInfoReceived);
     connect(m_client, &NexusModsClient::modFilesReceived, this, &NexusDownloadModalContent::onModFilesReceived);
@@ -436,7 +437,11 @@ void NexusDownloadModalContent::onDownloadFinished(const QString &savePath) {
     m_currentDownloadIndex++;
 
     if (m_currentDownloadIndex < m_selectedFiles.size()) {
-        startNextDownload();
+        if (m_manualDownloadActive) {
+            startBrowserDownload();
+        } else {
+            startNextDownload();
+        }
     } else {
         startNextMod();
     }
@@ -457,11 +462,43 @@ void NexusDownloadModalContent::startNextMod() {
     m_selectedFiles.clear();
     m_selectedFileIds.clear();
     m_currentDownloadIndex = 0;
+    m_manualDownloadActive = false;
 
     startDownloadProcess();
 }
 
-void NexusDownloadModalContent::startManualDownloadSequence() {
+void NexusDownloadModalContent::ensureBrowserPage() {
+    if (m_browser) {
+        return;
+    }
+
+    auto *page = new QWidget(this);
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+
+    m_browser = new BrowserWidget(page);
+    layout->addWidget(m_browser, 1);
+
+    m_browserPageIndex = m_stack->addWidget(page);
+
+    connect(m_browser, &BrowserWidget::nxmLinkRequested, this, &NexusDownloadModalContent::onNxmLinkRequested);
+    connect(m_browser, &BrowserWidget::fileDownloaded, this, &NexusDownloadModalContent::onBrowserFileDownloaded);
+    connect(m_browser, &BrowserWidget::downloadFailed, this, [this](const QString &reason) {
+        MessageModal::warning(m_modalManager, tr("Download Failed"), reason);
+    });
+}
+
+void NexusDownloadModalContent::showBrowserPage() {
+    ensureBrowserPage();
+    setPreferredSize(QSize(800, 620));
+    m_stack->setCurrentIndex(m_browserPageIndex);
+    updateFooterButtons();
+}
+
+void NexusDownloadModalContent::startBrowserDownload() {
+    m_manualDownloadActive = true;
+
     if (m_currentDownloadIndex >= m_selectedFiles.size()) {
         startNextMod();
         return;
@@ -470,137 +507,44 @@ void NexusDownloadModalContent::startManualDownloadSequence() {
     const NexusFileInfo &file = m_selectedFiles[m_currentDownloadIndex];
     m_currentFileId = file.id;
 
-    QString modUrl = QString("https://www.nexusmods.com/foxhole/mods/%1?tab=files&file_id=%2")
-                        .arg(m_currentModId, m_currentFileId);
+    showBrowserPage();
 
-    QString title;
-    QString message;
+    const QString modUrl = QString("https://www.nexusmods.com/foxhole/mods/%1?tab=files&file_id=%2")
+                                .arg(m_currentModId, m_currentFileId);
+    m_browser->navigate(QUrl(modUrl));
+}
 
-    if (m_selectedFiles.size() > 1) {
-        title = tr("Download File %1 of %2").arg(m_currentDownloadIndex + 1).arg(m_selectedFiles.size());
-        message = tr("Downloading: %1\n\nThe browser will open. Please download the file.\n\nOnce complete, click OK to locate it.")
-            .arg(file.name);
-    } else {
-        title = tr("Select Downloaded File");
-        message = tr("Please download the file from your browser.\n\nOnce the download is complete, click OK to locate the file.");
+void NexusDownloadModalContent::onNxmLinkRequested(const QUrl &url) {
+    NexusUrlParser::NxmResult nxm = NexusUrlParser::parseNxmUrl(url.toString());
+    if (!nxm.isValid) {
+        MessageModal::warning(m_modalManager, tr("Error"), nxm.error);
+        return;
+    }
+    if (nxm.modId != m_currentModId || nxm.fileId != m_currentFileId) {
+        MessageModal::warning(m_modalManager, tr("Error"),
+                              tr("That download link is for a different file than the one being installed."));
+        return;
     }
 
-    if (m_pendingMods.size() > 1) {
-        title = tr("Mod %1 of %2 - %3").arg(m_currentModIndex + 1).arg(m_pendingMods.size()).arg(title);
-    }
+    showDownloadPage();
+    m_statusLabel->setText(tr("Getting download link..."));
+    m_client->getDownloadLink(nxm.modId, nxm.fileId, nxm.key, nxm.expires);
+}
 
-    QDesktopServices::openUrl(QUrl(modUrl));
-
-    auto *selectModal = new MessageModal(
-        title,
-        message,
-        MessageModal::Information,
-        MessageModal::Ok | MessageModal::Cancel
-    );
-
-    connect(selectModal, &MessageModal::finished, this, [this, file, selectModal]() {
-        if (selectModal->clickedButton() == MessageModal::Ok) {
-            QString dialogTitle = m_selectedFiles.size() > 1
-                ? tr("Select Downloaded File - %1").arg(file.name)
-                : tr("Select Downloaded File");
-
-            QString filePath = QFileDialog::getOpenFileName(
-                this,
-                dialogTitle,
-                QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
-                tr("Mod Files (*.pak *.zip *.rar *.7z *.tar.gz *.tar.bz2 *.tar.xz);;")
-                + tr("Pak Files (*.pak);;")
-                + tr("Archive Files (*.zip *.rar *.7z *.tar.gz *.tar.bz2 *.tar.xz);;")
-                + tr("All Files (*.*)")
-            );
-
-            if (!filePath.isEmpty()) {
-                if (m_selectedFiles.size() == 1) {
-                    m_downloadedFilePaths.clear();
-                    m_downloadedFiles.clear();
-                }
-
-                m_downloadedFilePaths.append(filePath);
-                m_downloadedFiles.append(file);
-
-                m_results.append({
-                    filePath,
-                    m_currentModId,
-                    m_pendingMods[m_currentModIndex].url,
-                    file,
-                    m_author,
-                    m_description
-                });
-
-                if (m_selectedFiles.size() > 1) {
-                    int progress = ((m_currentDownloadIndex + 1) * 100) / m_selectedFiles.size();
-                    m_progressBar->setValue(progress);
-                    m_statusLabel->setText(tr("Downloaded %1 of %2 files")
-                        .arg(m_currentDownloadIndex + 1).arg(m_selectedFiles.size()));
-                }
-
-                m_currentDownloadIndex++;
-                startManualDownloadSequence();
-            } else {
-                if (m_selectedFiles.size() == 1) {
-                    reject();
-                } else {
-                    showInputPage();
-                }
-            }
-        } else {
-            if (m_selectedFiles.size() == 1) {
-                reject();
-            } else {
-                showInputPage();
-            }
-        }
-        selectModal->deleteLater();
-    });
-
-    m_modalManager->showModal(selectModal);
+void NexusDownloadModalContent::onBrowserFileDownloaded(const QString &filePath, const QString &) {
+    onDownloadFinished(filePath);
 }
 
 void NexusDownloadModalContent::onError(const QString &error) {
     if (error == "PREMIUM_REQUIRED") {
-        QString message;
-        QString title = tr("Premium Required");
-
+        // Direct downloads via the API require Premium; fall back to the in-app browser
+        // straight away rather than asking the user to confirm first.
+        m_currentDownloadIndex = 0;
         if (m_selectedFiles.size() > 1) {
-            message = tr(
-                "Direct downloads via API require a Nexus Mods Premium account.\n\n"
-                "Your browser will open for each of the %1 files you selected. "
-                "Please download each file manually.\n\n"
-                "You will be prompted to locate each downloaded file."
-            ).arg(m_selectedFiles.size());
-        } else {
-            message = tr("Direct downloads via API require a Nexus Mods Premium account.\n\n"
-                     "Your browser will open to the download page where you can download the file manually.\n\n"
-                     "The mod will be installed with Nexus metadata for future updates.");
+            m_downloadedFilePaths.clear();
+            m_downloadedFiles.clear();
         }
-
-        auto *modal = new MessageModal(
-            title,
-            message,
-            MessageModal::Information,
-            MessageModal::Ok | MessageModal::Cancel
-        );
-
-        connect(modal, &MessageModal::finished, this, [this, modal]() {
-            if (modal->clickedButton() == MessageModal::Ok) {
-                m_currentDownloadIndex = 0;
-                if (m_selectedFiles.size() > 1) {
-                    m_downloadedFilePaths.clear();
-                    m_downloadedFiles.clear();
-                }
-                startManualDownloadSequence();
-            } else {
-                showInputPage();
-            }
-            modal->deleteLater();
-        });
-
-        m_modalManager->showModal(modal);
+        startBrowserDownload();
     } else {
         MessageModal::warning(m_modalManager, tr("Error"), error);
         showInputPage();

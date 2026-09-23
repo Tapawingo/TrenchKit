@@ -7,6 +7,7 @@
 #include "core/utils/UpdateArchiveExtractor.h"
 #include "core/utils/UpdateCleanup.h"
 #include "core/services/UpdaterService.h"
+#include "core/utils/NexusUrlParser.h"
 
 #include <QDir>
 #include <QFile>
@@ -153,6 +154,31 @@ class TestUtilities : public QObject {
 private slots:
     void initTestCase() {
         QStandardPaths::setTestModeEnabled(true);
+    }
+
+    void testParseNxmUrl() {
+        auto result = NexusUrlParser::parseNxmUrl(
+            "nxm://foxhole/mods/123/files/456?key=abc123&expires=1700000000&user_id=1");
+        QVERIFY(result.isValid);
+        QCOMPARE(result.gameDomain, QStringLiteral("foxhole"));
+        QCOMPARE(result.modId, QStringLiteral("123"));
+        QCOMPARE(result.fileId, QStringLiteral("456"));
+        QCOMPARE(result.key, QStringLiteral("abc123"));
+        QCOMPARE(result.expires, QStringLiteral("1700000000"));
+    }
+
+    void testParseNxmUrlRejectsOtherGame() {
+        auto result = NexusUrlParser::parseNxmUrl("nxm://skyrim/mods/1/files/2?key=k&expires=1");
+        QVERIFY(!result.isValid);
+        QVERIFY(!result.error.isEmpty());
+    }
+
+    void testParseNxmUrlRejectsMalformedPath() {
+        auto result = NexusUrlParser::parseNxmUrl("nxm://foxhole/mods/abc/files/2");
+        QVERIFY(!result.isValid);
+
+        auto notNxm = NexusUrlParser::parseNxmUrl("https://www.nexusmods.com/foxhole/mods/1");
+        QVERIFY(!notNxm.isValid);
     }
 
     void testParseVersionFromTag() {

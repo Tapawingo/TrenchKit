@@ -39,7 +39,11 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Widgets Network Concurrent Test WebSockets LinguistTools)
+# WebEngineWidgets (Chromium) powers the in-app browser; MinGW kits do not ship it, so build with MSVC or gcc.
+# WebChannel/Positioning are WebEngineWidgets' own dependencies; listed explicitly for a clear error
+# if a Qt kit is missing them, rather than a cryptic failure deep inside WebEngineWidgets' own config.
+find_package(Qt6 6.5 REQUIRED COMPONENTS
+  Widgets Network Concurrent Test WebSockets WebEngineWidgets WebChannel Positioning LinguistTools)
 
 # Fetch zip library for archive extraction (MIT, zero dependencies)
 include(FetchContent)

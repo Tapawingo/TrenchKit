@@ -28,6 +28,9 @@ static int run(int argc, char *argv[]) {
     HANDLE hMutex = CreateMutexW(nullptr, FALSE, L"Global\\TrenchKitRunning");
 #endif
 
+    // Required by Qt WebEngine (the in-app Nexus Mods browser) before QApplication exists.
+    QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("TrenchKit"));
     QCoreApplication::setApplicationName(QStringLiteral("TrenchKit"));

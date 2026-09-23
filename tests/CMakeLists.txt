@@ -18,6 +18,8 @@ qt_add_executable(tests_utilities
   ${CMAKE_SOURCE_DIR}/src/core/utils/UpdateCleanup.cpp
   ${CMAKE_SOURCE_DIR}/src/core/services/UpdaterService.h
   ${CMAKE_SOURCE_DIR}/src/core/services/UpdaterService.cpp
+  ${CMAKE_SOURCE_DIR}/src/core/utils/NexusUrlParser.h
+  ${CMAKE_SOURCE_DIR}/src/core/utils/NexusUrlParser.cpp
 )
 
 target_include_directories(tests_utilities

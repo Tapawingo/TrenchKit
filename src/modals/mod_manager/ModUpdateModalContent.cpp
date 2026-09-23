@@ -3,7 +3,9 @@
 #include "common/modals/ModalManager.h"
 #include "core/managers/ModManager.h"
 #include "core/api/NexusModsClient.h"
+#include "core/utils/NexusUrlParser.h"
 #include "core/utils/Theme.h"
+#include "common/widgets/BrowserWidget.h"
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
@@ -12,8 +14,6 @@
 #include <QDir>
 #include <QFile>
 #include <QTimer>
-#include <QFileDialog>
-#include <QDesktopServices>
 #include <QUrl>
 
 ModUpdateModalContent::ModUpdateModalContent(const ModInfo &mod,
@@ -151,63 +151,67 @@ void ModUpdateModalContent::onError(const QString &error) {
     m_statusLabel->setText(tr("Error: %1").arg(error));
 
     if (error == "PREMIUM_REQUIRED") {
-        QString modUrl = QString("https://www.nexusmods.com/foxhole/mods/%1?tab=files&file_id=%2")
-                            .arg(m_mod.nexusModId, m_updateInfo.availableFileId);
-
-        auto *modal = new MessageModal(
-            tr("Premium Required"),
-            tr("Direct updates via API require a Nexus Mods Premium account.\n\n"
-            "Your browser will open to the download page where you can download the file manually.\n\n"
-            "The update will be installed with existing metadata preserved."),
-            MessageModal::Information,
-            MessageModal::Ok | MessageModal::Cancel
-        );
-
-        connect(modal, &MessageModal::finished, this, [this, modUrl, modal]() {
-            if (modal->clickedButton() == MessageModal::Ok) {
-                QDesktopServices::openUrl(QUrl(modUrl));
-
-                auto *selectModal = new MessageModal(
-                    tr("Select Downloaded File"),
-                    tr("Please download the file from your browser.\n\n"
-                    "Once the download is complete, click OK to locate the file."),
-                    MessageModal::Information,
-                    MessageModal::Ok | MessageModal::Cancel
-                );
-
-                connect(selectModal, &MessageModal::finished, this, [this, selectModal]() {
-                    if (selectModal->clickedButton() == MessageModal::Ok) {
-                        QString filePath = QFileDialog::getOpenFileName(
-                            this,
-                            tr("Select Downloaded File"),
-                            QStandardPaths::writableLocation(QStandardPaths::DownloadLocation),
-                            tr("Mod Files (*.pak *.zip *.rar *.7z *.tar.gz *.tar.bz2 *.tar.xz);;"
-                            "Pak Files (*.pak);;"
-                            "Archive Files (*.zip *.rar *.7z *.tar.gz *.tar.bz2 *.tar.xz);;"
-                            "All Files (*.*)")
-                        );
-
-                        if (!filePath.isEmpty()) {
-                            installFile(filePath, false);
-                        } else {
-                            reject();
-                        }
-                    } else {
-                        reject();
-                    }
-                });
-
-                m_modalManager->showModal(selectModal);
-            } else {
-                reject();
-            }
-        });
-
-        m_modalManager->showModal(modal);
+        // Direct updates via the API require Premium; fall back to the in-app browser
+        // straight away rather than asking the user to confirm first.
+        startManualUpdateDownload();
     } else {
         MessageModal::critical(m_modalManager, tr("Error"), error);
         reject();
     }
+}
+
+void ModUpdateModalContent::ensureBrowserPage() {
+    if (m_browser) {
+        return;
+    }
+
+    // The trailing stretch from setupUi() keeps things top-aligned when there is no browser;
+    // once the browser view is added it should fill that space instead.
+    if (QLayoutItem *stretch = bodyLayout()->takeAt(bodyLayout()->count() - 1)) {
+        delete stretch;
+    }
+
+    m_browser = new BrowserWidget(this);
+    bodyLayout()->addWidget(m_browser, 1);
+
+    connect(m_browser, &BrowserWidget::nxmLinkRequested, this, &ModUpdateModalContent::onNxmLinkRequested);
+    connect(m_browser, &BrowserWidget::fileDownloaded, this, &ModUpdateModalContent::onBrowserFileDownloaded);
+    connect(m_browser, &BrowserWidget::downloadFailed, this, [this](const QString &reason) {
+        MessageModal::warning(m_modalManager, tr("Download Failed"), reason);
+    });
+}
+
+void ModUpdateModalContent::showBrowserPage() {
+    ensureBrowserPage();
+    setPreferredSize(QSize(800, 620));
+}
+
+void ModUpdateModalContent::startManualUpdateDownload() {
+    showBrowserPage();
+
+    const QString modUrl = QString("https://www.nexusmods.com/foxhole/mods/%1?tab=files&file_id=%2")
+                                .arg(m_mod.nexusModId, m_updateInfo.availableFileId);
+    m_browser->navigate(QUrl(modUrl));
+}
+
+void ModUpdateModalContent::onNxmLinkRequested(const QUrl &url) {
+    NexusUrlParser::NxmResult nxm = NexusUrlParser::parseNxmUrl(url.toString());
+    if (!nxm.isValid) {
+        MessageModal::warning(m_modalManager, tr("Error"), nxm.error);
+        return;
+    }
+    if (nxm.modId != m_mod.nexusModId || nxm.fileId != m_updateInfo.availableFileId) {
+        MessageModal::warning(m_modalManager, tr("Error"),
+                              tr("That download link is for a different file than the update being installed."));
+        return;
+    }
+
+    m_statusLabel->setText(tr("Getting download link..."));
+    m_nexusClient->getDownloadLink(nxm.modId, nxm.fileId, nxm.key, nxm.expires);
+}
+
+void ModUpdateModalContent::onBrowserFileDownloaded(const QString &filePath, const QString &) {
+    onDownloadFinished(filePath);
 }
 
 void ModUpdateModalContent::onCancelClicked() {

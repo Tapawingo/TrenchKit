@@ -29,6 +29,10 @@ If it touches packaging/licensing-sensitive areas (Qt modules, deployment, bundl
 
 ## Build instructions (Ninja)
 
+Build with **MSVC** (Windows) or **gcc**/**clang** (Linux/macOS); MinGW can't build TrenchKit since Qt
+WebEngine (the in-app Nexus Mods browser) has no MinGW kit. Your Qt install needs the
+**WebEngineWidgets**, **WebChannel** and **Positioning** modules alongside the usual ones.
+
 ### Configure (Debug)
 ```sh
 cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug

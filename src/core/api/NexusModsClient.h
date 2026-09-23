@@ -41,8 +41,11 @@ public slots:
     void getModFiles(const QString &modId);
     /**
      * @brief Requests a CDN download URL for a specific file; emits @c downloadLinkReceived.
+     * @param key @param expires Validation pair from an nxm:// link; lets a free (non-Premium)
+     * account redeem the "Mod Manager Download" button instead of hitting PREMIUM_REQUIRED.
      */
-    void getDownloadLink(const QString &modId, const QString &fileId);
+    void getDownloadLink(const QString &modId, const QString &fileId,
+                          const QString &key = QString(), const QString &expires = QString());
     /**
      * @brief Downloads a file to @p savePath; emits @c downloadProgress and @c downloadFinished.
      */

@@ -9,18 +9,15 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 APP_EXE_NAME = "TrenchKit.exe"
 HELPER_EXE_NAME = "TrenchKitUpdater.exe"
-QT_RUNTIME_DLLS = (
-    "Qt6Core.dll",
-    "Qt6Gui.dll",
-    "Qt6Widgets.dll",
-    "Qt6Network.dll",
-    "Qt6Concurrent.dll",
-    "Qt6WebSockets.dll",
-)
-MINGW_RUNTIME_DLLS = (
-    "libgcc_s_seh-1.dll",
-    "libstdc++-6.dll",
-    "libwinpthread-1.dll",
+WEBENGINE_PROCESS_EXE_NAME = "QtWebEngineProcess.exe"
+# windeployqt (run as a TrenchKit POST_BUILD step, see src/CMakeLists.txt) stages every plugin
+# category TrenchKit or Qt WebEngine can pull in directly next to the exe; mirror the ones it
+# creates instead of hand-listing every DLL Qt WebEngine's dependency tree (Quick, Qml, ANGLE, ...)
+# might need.
+QT_PLUGIN_DIRS = (
+    "platforms", "tls", "styles", "iconengines", "imageformats", "networkinformation",
+    "generic", "multimedia", "position", "printsupport", "sqldrivers", "qml",
+    "resources", "translations",
 )
 
 
@@ -59,10 +56,16 @@ def stage_release_payload(build_dir: Path, staging_dir: Path, notices_file: Path
             raise RuntimeError(f"Missing required executable: {exe_path}")
         shutil.copy2(exe_path, staging_dir / exe_name)
 
-    for dll_name in QT_RUNTIME_DLLS + MINGW_RUNTIME_DLLS:
-        dll_path = build_dir / dll_name
-        if dll_path.exists():
-            shutil.copy2(dll_path, staging_dir / dll_path.name)
+    webengine_process = build_dir / WEBENGINE_PROCESS_EXE_NAME
+    if not webengine_process.exists():
+        raise RuntimeError(
+            f"Missing {WEBENGINE_PROCESS_EXE_NAME}: {webengine_process} "
+            "(windeployqt did not run, or could not find it - see src/CMakeLists.txt)"
+        )
+    shutil.copy2(webengine_process, staging_dir / webengine_process.name)
+
+    for dll_path in build_dir.glob("*.dll"):
+        shutil.copy2(dll_path, staging_dir / dll_path.name)
 
     # The bundled libraries' licenses require their notices to travel with the binaries.
     if not notices_file.exists():
@@ -73,8 +76,8 @@ def stage_release_payload(build_dir: Path, staging_dir: Path, notices_file: Path
     if zip_dll.exists():
         shutil.copy2(zip_dll, staging_dir / zip_dll.name)
 
-    copy_tree(build_dir / "platforms", staging_dir / "platforms")
-    copy_tree(build_dir / "tls", staging_dir / "tls")
+    for plugin_dir in QT_PLUGIN_DIRS:
+        copy_tree(build_dir / plugin_dir, staging_dir / plugin_dir)
 
 
 def create_portable_archive(staging_dir: Path, archive_path: Path) -> None:
