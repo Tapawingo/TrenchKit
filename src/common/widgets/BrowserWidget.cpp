@@ -81,22 +81,31 @@ BrowserWidget::BrowserWidget(QWidget *parent)
     // Every toolbar widget matches the address bar's height so the row reads as one piece.
     constexpr int TOOLBAR_HEIGHT = 28;
 
+    // The app-wide QToolButton style pads for the big Launch button (12px 20px), which alone
+    // is taller than this whole toolbar and clips these icons at the fixed height below.
+    const QString navButtonStyle = QString("QToolButton { padding: 0px; }");
+
     m_backButton = new QToolButton(this);
-    m_backButton->setArrowType(Qt::LeftArrow);
+    // A text glyph rather than setArrowType()'s native arrow, which the style draws much
+    // larger than the reload glyph below at this button size.
+    m_backButton->setText(QStringLiteral("←"));
     m_backButton->setToolTip(tr("Back"));
-    m_backButton->setFixedHeight(TOOLBAR_HEIGHT);
+    m_backButton->setFixedSize(TOOLBAR_HEIGHT, TOOLBAR_HEIGHT);
+    m_backButton->setStyleSheet(navButtonStyle);
     toolbar->addWidget(m_backButton);
 
     m_forwardButton = new QToolButton(this);
-    m_forwardButton->setArrowType(Qt::RightArrow);
+    m_forwardButton->setText(QStringLiteral("→"));
     m_forwardButton->setToolTip(tr("Forward"));
-    m_forwardButton->setFixedHeight(TOOLBAR_HEIGHT);
+    m_forwardButton->setFixedSize(TOOLBAR_HEIGHT, TOOLBAR_HEIGHT);
+    m_forwardButton->setStyleSheet(navButtonStyle);
     toolbar->addWidget(m_forwardButton);
 
     m_reloadButton = new QToolButton(this);
     m_reloadButton->setText(QStringLiteral("⟳"));
     m_reloadButton->setToolTip(tr("Reload"));
-    m_reloadButton->setFixedHeight(TOOLBAR_HEIGHT);
+    m_reloadButton->setFixedSize(TOOLBAR_HEIGHT, TOOLBAR_HEIGHT);
+    m_reloadButton->setStyleSheet(navButtonStyle);
     toolbar->addWidget(m_reloadButton);
 
     m_addressBar = new QLineEdit(this);
@@ -111,6 +120,7 @@ BrowserWidget::BrowserWidget(QWidget *parent)
 
     m_externalButton = new QPushButton(tr("Open in Browser"), this);
     m_externalButton->setFixedHeight(TOOLBAR_HEIGHT);
+    m_externalButton->setStyleSheet(QStringLiteral("QPushButton { padding: 0px 12px; }"));
     toolbar->addWidget(m_externalButton);
 
     layout->addLayout(toolbar);
