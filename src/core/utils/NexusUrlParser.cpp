@@ -41,3 +41,36 @@ NexusUrlParser::ParseResult NexusUrlParser::parseUrl(const QString &url) {
     result.isValid = true;
     return result;
 }
+
+NexusUrlParser::NxmResult NexusUrlParser::parseNxmUrl(const QString &url) {
+    NxmResult result;
+
+    QUrl qurl(url);
+    if (!qurl.isValid() || qurl.scheme() != QStringLiteral("nxm")) {
+        result.error = QStringLiteral("Not an nxm:// link");
+        return result;
+    }
+
+    result.gameDomain = qurl.host();
+    if (result.gameDomain != QStringLiteral("foxhole")) {
+        result.error = QStringLiteral("nxm link is for a different game (got: ") + result.gameDomain + QStringLiteral(")");
+        return result;
+    }
+
+    QRegularExpression pattern(QStringLiteral("^/mods/(\\d+)/files/(\\d+)"));
+    QRegularExpressionMatch match = pattern.match(qurl.path());
+    if (!match.hasMatch()) {
+        result.error = QStringLiteral("Invalid nxm link format");
+        return result;
+    }
+
+    result.modId = match.captured(1);
+    result.fileId = match.captured(2);
+
+    const QUrlQuery query(qurl);
+    result.key = query.queryItemValue(QStringLiteral("key"));
+    result.expires = query.queryItemValue(QStringLiteral("expires"));
+
+    result.isValid = true;
+    return result;
+}

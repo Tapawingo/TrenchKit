@@ -10,6 +10,8 @@ qt_add_executable(TrenchKit
   common/widgets/GradientFrame.cpp
   common/widgets/PanelFrame.h
   common/widgets/PanelFrame.cpp
+  common/widgets/BrowserWidget.h
+  common/widgets/BrowserWidget.cpp
 
   views/mod_manager/InstallPathWidget.h
   views/mod_manager/InstallPathWidget.cpp
@@ -172,6 +174,7 @@ target_link_libraries(TrenchKit
     Qt6::Network
     Qt6::Concurrent
     Qt6::WebSockets
+    Qt6::WebEngineWidgets
     zip
     archive_static
 )
@@ -254,55 +257,31 @@ if(WIN32)
         )
     endif()
 
-    # Qt DLLs (copy each target's own imported DLL so the correct debug/release
-    # variant, e.g. Qt6Networkd.dll under MSVC Debug, is always copied)
-    foreach(QT_APP_TARGET
-            Qt6::Core
-            Qt6::Gui
-            Qt6::Widgets
-            Qt6::Network
-            Qt6::Concurrent
-            Qt6::WebSockets)
-        add_custom_command(TARGET TrenchKit POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_FILE:${QT_APP_TARGET}>
-                $<TARGET_FILE_DIR:TrenchKit>
-            COMMENT "Copying $<TARGET_FILE_NAME:${QT_APP_TARGET}> to output directory"
-        )
-    endforeach()
+    # Qt WebEngine pulls in dozens of transitive DLLs (Quick, Qml, ANGLE, ...) plus
+    # QtWebEngineProcess.exe and its resources/translations, so hand-listing them the way
+    # the platform plugin and MinGW runtime used to be is no longer practical (MinGW kits
+    # don't ship WebEngine at all, hence MSVC/gcc being required now). windeployqt knows
+    # that dependency graph, so use it instead.
+    get_target_property(_qt_qmake_exe Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(_qt_bin_dir "${_qt_qmake_exe}" DIRECTORY)
+    find_program(WINDEPLOYQT_EXECUTABLE
+        NAMES windeployqt6 windeployqt
+        HINTS "${_qt_bin_dir}"
+    )
 
-    # MinGW runtime DLLs
-    if(MINGW)
-        get_filename_component(MINGW_BIN_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
-        set(MINGW_DLLS "")
-        foreach(MINGW_DLL_NAME
-                libgcc_s_seh-1.dll
-                libstdc++-6.dll
-                libwinpthread-1.dll)
-            if(EXISTS "${MINGW_BIN_DIR}/${MINGW_DLL_NAME}")
-                list(APPEND MINGW_DLLS "${MINGW_BIN_DIR}/${MINGW_DLL_NAME}")
-            endif()
-        endforeach()
-        if(MINGW_DLLS)
-            add_custom_command(TARGET TrenchKit POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    ${MINGW_DLLS}
-                    $<TARGET_FILE_DIR:TrenchKit>
-                COMMENT "Copying MinGW runtime DLLs to output directory"
-            )
-        endif()
-    endif()
-
-    # Qt platform plugin
-    set(QT_PLATFORM_DLL "${Qt6_DIR}/../../../plugins/platforms/qwindows.dll")
-    if(EXISTS "${QT_PLATFORM_DLL}")
+    if(WINDEPLOYQT_EXECUTABLE)
         add_custom_command(TARGET TrenchKit POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory
-                $<TARGET_FILE_DIR:TrenchKit>/platforms
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${QT_PLATFORM_DLL}"
-                $<TARGET_FILE_DIR:TrenchKit>/platforms/
-            COMMENT "Copying Qt platform plugin to output directory"
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+                --no-compiler-runtime
+                --no-translations
+                $<$<CONFIG:Debug>:--debug>
+                $<$<NOT:$<CONFIG:Debug>>:--release>
+                $<TARGET_FILE:TrenchKit>
+            COMMENT "Running windeployqt to stage the Qt (incl. WebEngine) runtime"
         )
+    else()
+        message(WARNING "windeployqt was not found next to Qt6::qmake (looked in ${_qt_bin_dir}); "
+                         "the built app will be missing its Qt runtime (Qt6*.dll, platforms/, and "
+                         "the WebEngine process/resources).")
     endif()
 endif()

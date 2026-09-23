@@ -12,6 +12,14 @@ BaseModalContent::BaseModalContent(QWidget *parent)
     setupLayout();
 }
 
+void BaseModalContent::setPreferredSize(const QSize &size) {
+    if (m_preferredSize == size) {
+        return;
+    }
+    m_preferredSize = size;
+    emit preferredSizeChanged();
+}
+
 void BaseModalContent::setupLayout() {
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);

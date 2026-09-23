@@ -26,6 +26,11 @@ ModalOverlay::ModalOverlay(BaseModalContent *content, QWidget *parent)
         close();
     });
 
+    connect(m_content, &BaseModalContent::preferredSizeChanged, this, [this]() {
+        m_container->resize(m_content->preferredSize());
+        centerContainer();
+    });
+
     if (parent) {
         resize(parent->size());
         centerContainer();

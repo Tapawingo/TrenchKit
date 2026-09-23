@@ -108,20 +108,28 @@ To download mods from Itch.io, you need an API key:
 ## Build (Ninja)
 
 ### Requirements
-- A C++20 compiler toolchain
+- A C++20 compiler toolchain: **MSVC** (Windows) or **gcc**/**clang** (Linux/macOS) — MinGW cannot
+  build TrenchKit, since Qt WebEngine (used for the in-app Nexus Mods browser) does not ship a
+  MinGW kit
 - CMake 3.24+
 - Ninja
-- Qt 6.5+
+- Qt 6.5+, with the **WebEngineWidgets**, **WebChannel** and **Positioning** modules installed
+  alongside the usual Widgets/Network/Concurrent/WebSockets ones (the Qt Maintenance Tool or
+  `aqt install-qt ... -m qtwebengine qtwebchannel qtpositioning` add them to an existing kit)
 - Platform-specific TLS libraries:
   - **Windows**: Built-in (Schannel)
   - **Linux**: OpenSSL 1.1.x or 3.x (`libssl-dev` on Debian/Ubuntu, `openssl-devel` on Fedora/RHEL)
   - **macOS**: Built-in (SecureTransport)
 
 ### 1) Install dependencies
-- Install **Qt 6** (development files + CMake config packages)
+- Install **Qt 6** (development files + CMake config packages), including the WebEngineWidgets,
+  WebChannel and Positioning modules
 - Install **Ninja**
-- Install a C++ compiler (MSVC, clang, or gcc)
-- **Linux only**: Install OpenSSL development libraries
+- Install a C++ compiler (**MSVC** or **gcc**/**clang** — not MinGW)
+- **Linux only**: Install OpenSSL development libraries, plus Qt WebEngine's runtime libraries
+  (on Debian/Ubuntu: `libnss3 libnspr4 libxcomposite1 libxdamage1 libxrandr2 libxtst6
+  libxshmfence1 libxfixes3 libxcursor1 libgbm1 libdrm2 libpango-1.0-0 libcairo2` plus your
+  distro's ALSA/ATK/CUPS packages)
 
 ### 2) Configure (Debug)
 ```sh

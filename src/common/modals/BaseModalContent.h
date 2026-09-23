@@ -42,9 +42,13 @@ public:
     void setHeaderVisible(bool visible);
 
     /**
-     * @brief Hints the preferred initial size to @c ModalOverlay; default is 500×400.
+     * @brief Hints the preferred size to @c ModalOverlay; default is 500×400.
+     *
+     * Calling this after the modal is already shown resizes and re-centers it (see
+     * @c preferredSizeChanged()) — useful for content whose size needs change, such as
+     * a page that grows to host an embedded browser.
      */
-    void setPreferredSize(const QSize &size) { m_preferredSize = size; }
+    void setPreferredSize(const QSize &size);
     QSize preferredSize() const { return m_preferredSize; }
 
 public slots:
@@ -58,6 +62,10 @@ signals:
      * @brief Emitted when the modal is done; @p result is one of the @c Result enum values.
      */
     void finished(int result);
+    /**
+     * @brief Emitted when @c setPreferredSize() changes the size; @c ModalOverlay resizes/re-centers on it.
+     */
+    void preferredSizeChanged();
 
 protected:
     void showEvent(QShowEvent *event) override;

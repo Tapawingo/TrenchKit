@@ -10,6 +10,7 @@
 #include "core/models/ModInfo.h"
 #include "core/models/ModUpdateInfo.h"
 #include <QString>
+#include <QUrl>
 
 class ModManager;
 class NexusModsClient;
@@ -17,6 +18,7 @@ class ModalManager;
 class QLabel;
 class QProgressBar;
 class QPushButton;
+class BrowserWidget;
 
 /**
  * @brief Shown when the user requests an update for a NexusMods-linked mod.
@@ -42,11 +44,16 @@ private slots:
     void onDownloadFinished(const QString &savePath);
     void onError(const QString &error);
     void onCancelClicked();
+    void onNxmLinkRequested(const QUrl &url);
+    void onBrowserFileDownloaded(const QString &filePath, const QString &suggestedFileName);
 
 private:
     void setupUi();
     void startDownload();
     void installFile(const QString &filePath, bool deleteWhenDone);
+    void ensureBrowserPage();
+    void showBrowserPage();
+    void startManualUpdateDownload();
     QString generateTempPath(const QString &fileName) const;
 
     ModInfo m_mod;
@@ -60,6 +67,8 @@ private:
     QProgressBar *m_progressBar;
     QLabel *m_statusLabel;
     QPushButton *m_cancelButton;
+
+    BrowserWidget *m_browser = nullptr;
 
     QString m_downloadedPath;
     CancelTokenPtr m_installToken;

@@ -9,6 +9,7 @@
 #include "core/models/NexusFileInfo.h"
 #include <QString>
 #include <QList>
+#include <QUrl>
 
 class QEvent;
 class NexusModsClient;
@@ -19,6 +20,7 @@ class QPushButton;
 class QProgressBar;
 class QLabel;
 class QStackedWidget;
+class BrowserWidget;
 
 /**
  * @brief Aggregated result for one downloaded NexusMods file.
@@ -68,6 +70,8 @@ private slots:
     void onDownloadProgress(qint64 received, qint64 total);
     void onDownloadFinished(const QString &savePath);
     void onError(const QString &error);
+    void onNxmLinkRequested(const QUrl &url);
+    void onBrowserFileDownloaded(const QString &filePath, const QString &suggestedFileName);
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -93,7 +97,9 @@ private:
     void startDownloadProcess();
     void startNextDownload();
     void startNextMod();
-    void startManualDownloadSequence();
+    void ensureBrowserPage();
+    void showBrowserPage();
+    void startBrowserDownload();
     QString generateTempPath(const QString &fileName) const;
     void updateFooterButtons();
     QString formatFileSize(qint64 bytes) const;
@@ -129,6 +135,12 @@ private:
     QString m_pendingUrl;
     QString m_author;
     QString m_description;
+
+    BrowserWidget *m_browser = nullptr;
+    int m_browserPageIndex = -1;
+    /// Once a mod hits PREMIUM_REQUIRED, its remaining selected files all go through the
+    /// browser page instead of retrying the API (which would just fail again).
+    bool m_manualDownloadActive = false;
 
     enum Page { InputPage, AuthPage, DownloadPage };
 };

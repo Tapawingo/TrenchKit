@@ -4,7 +4,12 @@ TrenchKit itself is licensed under the MIT License (see `LICENSE.md`). It bundle
 all built from source: libarchive, XZ Utils, zlib and bzip2 are linked into the application, and the
 zip library ships as `libzip.dll`. Their license texts are reproduced here as their licenses require.
 
-Qt is used as a shared library under its own license and is not covered here.
+Qt is used as a shared library under its own license and is not covered here. Qt WebEngine (used for
+the in-app Nexus Mods browser) is a partial exception: it is LGPLv3-only and bundles Chromium, whose
+own third-party attributions ship inside the Qt WebEngine installation itself (see
+`QtWebEngineProcess.exe`'s neighbouring `resources/` directory, or
+<https://www.qt.io/blog/2021/01/26/behind-the-scenes-qt-webengine> for how Qt tracks them) rather than
+being reproduced here.
 
 ## libarchive 3.7.4
 
