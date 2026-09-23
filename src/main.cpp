@@ -1,6 +1,5 @@
 #include <QApplication>
 #include "MainWindow.h"
-#include "common/widgets/BrowserWidget.h"
 #include "core/utils/UpdateCleanup.h"
 #include "core/utils/Logger.h"
 #include "core/utils/TranslationManager.h"
@@ -56,12 +55,7 @@ static int run(int argc, char *argv[]) {
         QThreadPool::globalInstance()->start([]() { UpdateCleanup::run(); });
     });
 
-    const bool isSmokeTest = app.arguments().contains("--smoke-test");
-    if (!isSmokeTest) {
-        QTimer::singleShot(0, &app, []() { BrowserWidget::warmUp(); });
-    }
-
-    if (isSmokeTest) {
+    if (app.arguments().contains("--smoke-test")) {
         QTimer::singleShot(200, &app, &QCoreApplication::quit);
     }
 

@@ -106,6 +106,9 @@ QString InstallPathWidget::installPath() const {
 }
 
 void InstallPathWidget::setInstallPath(const QString &path) {
+    // setText() alone would trigger textChanged -> onPathEdited() -> validatePath(), which
+    // would then run again explicitly below, firing validPathSelected() twice per call.
+    const QSignalBlocker blocker(m_pathLineEdit);
     m_pathLineEdit->setText(path);
     validatePath(path);
 }

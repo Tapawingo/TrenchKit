@@ -34,11 +34,6 @@ public:
     explicit BrowserWidget(QWidget *parent = nullptr);
     ~BrowserWidget() override;
 
-    /// @brief Pays Chromium's one-time engine-startup cost early; call once, shortly after the
-    /// main window is shown. Safe to call more than once. The warm-up view is kept alive for
-    /// the app's lifetime and never shown.
-    static void warmUp();
-
     void navigate(const QUrl &url);
     QWebEngineView* view() const { return m_view; }
 

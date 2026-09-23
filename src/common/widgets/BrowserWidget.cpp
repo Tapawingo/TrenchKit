@@ -67,17 +67,6 @@ QWebEngineProfile *BrowserWidget::sharedProfile() {
     return profile;
 }
 
-void BrowserWidget::warmUp() {
-    static QWebEngineView *warmupView = nullptr;
-    if (warmupView) {
-        return;
-    }
-    warmupView = new QWebEngineView();
-    warmupView->setPage(new QWebEnginePage(sharedProfile(), warmupView));
-    warmupView->load(QUrl(QStringLiteral("about:blank")));
-    // Never parented or shown: it only exists to pay Chromium's one-time engine-startup cost.
-}
-
 BrowserWidget::BrowserWidget(QWidget *parent)
     : QWidget(parent)
 {

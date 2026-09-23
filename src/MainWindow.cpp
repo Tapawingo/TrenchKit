@@ -504,13 +504,10 @@ void MainWindow::loadSettings() {
             watcher->deleteLater();
 
             if (isValid) {
+                // setInstallPath() emits validPathSelected(), which onInstallPathChanged()
+                // already handles by kicking off detectUnregisteredMods() itself; doing it
+                // again here duplicated the whole scan.
                 m_installPathWidget->setInstallPath(savedPath);
-
-                m_modListWidget->setLoadingState(true, tr("Detecting mods"));
-                QFuture<void> detectionFuture = QtConcurrent::run([this]() {
-                    m_modManager->detectUnregisteredMods();
-                });
-                m_unregisteredModsWatcher->setFuture(detectionFuture);
             } else {
                 m_installPathWidget->startAutoDetection();
             }
