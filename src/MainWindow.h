@@ -32,6 +32,7 @@ class ProfileManagerWidget;
 class ProfileManager;
 class QProgressDialog;
 class SettingsWidget;
+class BrowseModsWidget;
 class QShortcut;
 
 /**
@@ -77,6 +78,7 @@ private slots:
     void onUpdateDownloadProgress(qint64 received, qint64 total);
     void onUpdateDownloadFinished(const QString &savePath);
     void onSettingsClicked();
+    void onBrowseModsClicked();
     void runModVerification();
     void onVerificationComplete();
 
@@ -87,6 +89,7 @@ private:
     void setupModList();
     void setupRightPanel();
     void setupSettingsOverlay();
+    void setupBrowseModsPage();
     void loadSettings();
     void saveSettings();
     void startUpdateCheck();
@@ -98,6 +101,8 @@ private:
     void launchUpdater(const QString &stagingDir, const QString &updatesDir);
     void showSettingsOverlay();
     void hideSettingsOverlay();
+    void showBrowseModsPage();
+    void hideBrowseModsPage();
     void onSettingsApplied(bool autoCheck);
     QString findProfileImportPath() const;
     void trySyncEnabledMods();
@@ -133,6 +138,8 @@ private:
     QString m_pendingProfileImportPath;
     QWidget *m_settingsPage = nullptr;
     SettingsWidget *m_settingsWidget = nullptr;
+    QWidget *m_browsePage = nullptr;
+    BrowseModsWidget *m_browseModsWidget = nullptr;
     ModalManager *m_modalManager = nullptr;
     QShortcut *m_globalSearchShortcut = nullptr;
 

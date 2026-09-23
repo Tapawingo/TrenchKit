@@ -12,6 +12,7 @@
 ActionsWidget::ActionsWidget(QWidget *parent)
     : QWidget(parent)
     , m_addButton(new QPushButton(this))
+    , m_browseModsButton(new QPushButton(this))
     , m_removeButton(new QPushButton(this))
     , m_moveUpButton(new QPushButton(this))
     , m_moveDownButton(new QPushButton(this))
@@ -56,9 +57,11 @@ void ActionsWidget::setupUi() {
     frameLayout->addWidget(m_titleLabel);
 
     m_addButton->setCursor(Qt::PointingHandCursor);
+    m_browseModsButton->setCursor(Qt::PointingHandCursor);
     m_removeButton->setEnabled(false);
     m_removeButton->setCursor(Qt::PointingHandCursor);
     frameLayout->addWidget(m_addButton);
+    frameLayout->addWidget(m_browseModsButton);
     frameLayout->addWidget(m_removeButton);
 
     m_moveUpButton->setEnabled(false);
@@ -89,6 +92,7 @@ void ActionsWidget::changeEvent(QEvent *event) {
 void ActionsWidget::retranslateUi() {
     m_titleLabel->setText(tr("Actions"));
     m_addButton->setText(tr("Add Mod"));
+    m_browseModsButton->setText(tr("Browse Mods"));
     m_removeButton->setText(tr("Remove Mod"));
     m_moveUpButton->setText(tr("Move Up"));
     m_moveDownButton->setText(tr("Move Down"));
@@ -97,6 +101,7 @@ void ActionsWidget::retranslateUi() {
 
 void ActionsWidget::setupConnections() {
     connect(m_addButton, &QPushButton::clicked, this, &ActionsWidget::onAddModClicked);
+    connect(m_browseModsButton, &QPushButton::clicked, this, &ActionsWidget::onBrowseModsClicked);
     connect(m_removeButton, &QPushButton::clicked, this, &ActionsWidget::onRemoveModClicked);
     connect(m_moveUpButton, &QPushButton::clicked, this, &ActionsWidget::onMoveUpClicked);
     connect(m_moveDownButton, &QPushButton::clicked, this, &ActionsWidget::onMoveDownClicked);
@@ -113,6 +118,10 @@ QFrame* ActionsWidget::createSeparator() {
 
 void ActionsWidget::onAddModClicked() {
     emit addModRequested();
+}
+
+void ActionsWidget::onBrowseModsClicked() {
+    emit browseModsRequested();
 }
 
 void ActionsWidget::onRemoveModClicked() {

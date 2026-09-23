@@ -1,5 +1,6 @@
 #include <QApplication>
 #include "MainWindow.h"
+#include "common/widgets/BrowserWidget.h"
 #include "core/utils/UpdateCleanup.h"
 #include "core/utils/Logger.h"
 #include "core/utils/TranslationManager.h"
@@ -31,6 +32,7 @@ static int run(int argc, char *argv[]) {
     // Required by Qt WebEngine (the in-app Nexus Mods browser) before QApplication exists.
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 
+    // Do not force --ignore-gpu-blocklist here: it caused a renderer crash on itch.io's pages.
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("TrenchKit"));
     QCoreApplication::setApplicationName(QStringLiteral("TrenchKit"));
@@ -54,7 +56,12 @@ static int run(int argc, char *argv[]) {
         QThreadPool::globalInstance()->start([]() { UpdateCleanup::run(); });
     });
 
-    if (app.arguments().contains("--smoke-test")) {
+    const bool isSmokeTest = app.arguments().contains("--smoke-test");
+    if (!isSmokeTest) {
+        QTimer::singleShot(0, &app, []() { BrowserWidget::warmUp(); });
+    }
+
+    if (isSmokeTest) {
         QTimer::singleShot(200, &app, &QCoreApplication::quit);
     }
 

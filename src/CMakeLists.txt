@@ -12,6 +12,8 @@ qt_add_executable(TrenchKit
   common/widgets/PanelFrame.cpp
   common/widgets/BrowserWidget.h
   common/widgets/BrowserWidget.cpp
+  common/widgets/ToastWidget.h
+  common/widgets/ToastWidget.cpp
 
   views/mod_manager/InstallPathWidget.h
   views/mod_manager/InstallPathWidget.cpp
@@ -43,6 +45,10 @@ qt_add_executable(TrenchKit
   views/mod_manager/LaunchWidget.cpp
   views/mod_manager/ProfileManagerWidget.h
   views/mod_manager/ProfileManagerWidget.cpp
+  views/mod_manager/ModInstallHelper.h
+  views/mod_manager/ModInstallHelper.cpp
+  views/mod_manager/BrowseModsWidget.h
+  views/mod_manager/BrowseModsWidget.cpp
 
   views/settings/SettingsWidget.h
   views/settings/SettingsWidget.cpp

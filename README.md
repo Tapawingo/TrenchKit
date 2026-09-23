@@ -33,6 +33,7 @@
 - Launch game with or without mods
 - Install mod from Nexusmods
 - Install mod from Itch.io
+- Browse NexusMods/Itch.io for mods in-app and install with one click
 - Check for mod updates
 - Check for mod conflicts
 - Check for mod dependencies (requires mod manifest)
@@ -55,6 +56,8 @@ To change load order, **drag and drop** mods in the list to reorder them. You ca
 4. Enter the mod URL and follow the prompts
 
 **Why download through TrenchKit?** Mods downloaded using the Add Mod button automatically store metadata (mod ID, file ID, and source information) which enables the **Check for Updates** feature.
+
+Alternatively, click **"Browse Mods"** to open an in-app browser on NexusMods or itch.io: installing a mod is then just downloading it like normal (clicking "Mod Manager Download" on NexusMods, or a game's download button on itch.io) — no URL to paste, and metadata is captured automatically the same way.
 
 ### Checking for Mod Updates
 

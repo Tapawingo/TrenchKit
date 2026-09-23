@@ -1,9 +1,11 @@
 #include "BrowserWidget.h"
 #include "core/utils/Theme.h"
 #include <QApplication>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -39,18 +41,12 @@ protected:
             return false;
         }
 
-        // Nexus Mods serves the actual file bytes from a separate CDN host, and the click that
-        // starts a download often opens as a "new tab" navigation before Chromium even knows
-        // it isn't a page: rejecting navigation by host here (as an earlier version did) also
-        // rejects that download before it gets far enough to become a downloadRequested() signal.
-        // So every navigation is allowed through; downloadRequested() still catches real
-        // downloads regardless of host, and the toolbar's "Open in Browser" button is the escape
-        // hatch if a click leads somewhere the user would rather finish in their real browser.
+        // Downloads often redirect through a CDN host first; rejecting by host would reject the
+        // download too. downloadRequested() catches real downloads regardless of host instead.
         return true;
     }
 
-    // Popups (e.g. a "new tab" a download or sign-in flow opens) are kept in the same view
-    // rather than opening a separate native window, which this widget has no chrome to host.
+    // Keep popups in the same view; this widget has no chrome to host a separate window.
     QWebEnginePage *createWindow(QWebEnginePage::WebWindowType) override {
         return this;
     }
@@ -62,10 +58,24 @@ QWebEngineProfile *BrowserWidget::sharedProfile() {
         const QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         profile = new QWebEngineProfile(QStringLiteral("nexus"), qApp);
         profile->setPersistentStoragePath(base + QStringLiteral("/browser"));
-        profile->setCachePath(base + QStringLiteral("/browser/cache"));
         profile->setPersistentCookiesPolicy(QWebEngineProfile::ForcePersistentCookies);
+
+        profile->setCachePath(base + QStringLiteral("/browser/cache"));
+        profile->setHttpCacheType(QWebEngineProfile::DiskHttpCache);
+        profile->setHttpCacheMaximumSize(200 * 1024 * 1024); // 200 MB
     }
     return profile;
+}
+
+void BrowserWidget::warmUp() {
+    static QWebEngineView *warmupView = nullptr;
+    if (warmupView) {
+        return;
+    }
+    warmupView = new QWebEngineView();
+    warmupView->setPage(new QWebEnginePage(sharedProfile(), warmupView));
+    warmupView->load(QUrl(QStringLiteral("about:blank")));
+    // Never parented or shown: it only exists to pay Chromium's one-time engine-startup cost.
 }
 
 BrowserWidget::BrowserWidget(QWidget *parent)
@@ -81,13 +91,11 @@ BrowserWidget::BrowserWidget(QWidget *parent)
     // Every toolbar widget matches the address bar's height so the row reads as one piece.
     constexpr int TOOLBAR_HEIGHT = 28;
 
-    // The app-wide QToolButton style pads for the big Launch button (12px 20px), which alone
-    // is taller than this whole toolbar and clips these icons at the fixed height below.
+    // Override the app-wide QToolButton padding (meant for the big Launch button; would clip these).
     const QString navButtonStyle = QString("QToolButton { padding: 0px; }");
 
     m_backButton = new QToolButton(this);
-    // A text glyph rather than setArrowType()'s native arrow, which the style draws much
-    // larger than the reload glyph below at this button size.
+    // Text glyph, not setArrowType(): the native arrow renders too large at this button size.
     m_backButton->setText(QStringLiteral("←"));
     m_backButton->setToolTip(tr("Back"));
     m_backButton->setFixedSize(TOOLBAR_HEIGHT, TOOLBAR_HEIGHT);
@@ -133,11 +141,13 @@ BrowserWidget::BrowserWidget(QWidget *parent)
     m_downloadLabel = new QLabel(m_downloadBar);
     m_downloadLabel->setStyleSheet(QString("QLabel { color: %1; font-size: 12px; }")
                                    .arg(Theme::Colors::TEXT_SECONDARY));
+    m_downloadLabel->setMaximumWidth(320); // cap so a long name can't squeeze the bar to a sliver
     downloadLayout->addWidget(m_downloadLabel);
 
     m_downloadProgressBar = new QProgressBar(m_downloadBar);
     m_downloadProgressBar->setRange(0, 0); // indeterminate until the first progress signal
     m_downloadProgressBar->setFixedHeight(TOOLBAR_HEIGHT);
+    m_downloadProgressBar->setMinimumWidth(80);
     downloadLayout->addWidget(m_downloadProgressBar, 1);
 
     m_downloadBar->setVisible(false);
@@ -159,30 +169,50 @@ BrowserWidget::BrowserWidget(QWidget *parent)
     connect(m_page, &NexusWebEnginePage::nxmLinkRequested, this, &BrowserWidget::nxmLinkRequested);
     connect(sharedProfile(), &QWebEngineProfile::downloadRequested, this, &BrowserWidget::onDownloadRequested);
 
-    // Downloads happen while this page stays put (no page switch to show progress elsewhere),
-    // so this widget shows its own progress bar for the duration.
     connect(this, &BrowserWidget::downloadStarted, this, [this](const QString &suggestedFileName) {
-        m_downloadLabel->setText(tr("Downloading %1...").arg(suggestedFileName));
-        m_downloadProgressBar->setRange(0, 0);
-        m_downloadProgressBar->setValue(0);
-        m_downloadBar->setVisible(true);
+        showExternalDownload(suggestedFileName);
     });
-    connect(this, &BrowserWidget::downloadProgress, this, [this](qint64 received, qint64 total) {
-        if (total > 0) {
-            m_downloadProgressBar->setRange(0, 100);
-            m_downloadProgressBar->setValue(static_cast<int>((received * 100) / total));
-            m_downloadLabel->setText(tr("Downloading: %1 / %2")
-                                     .arg(formatFileSize(received), formatFileSize(total)));
-        } else {
-            m_downloadLabel->setText(tr("Downloading: %1").arg(formatFileSize(received)));
-        }
-    });
+    connect(this, &BrowserWidget::downloadProgress, this, &BrowserWidget::updateDownloadLabel);
     connect(this, &BrowserWidget::fileDownloaded, this, [this](const QString &, const QString &) {
-        m_downloadBar->setVisible(false);
+        hideExternalDownload();
     });
     connect(this, &BrowserWidget::downloadFailed, this, [this](const QString &) {
-        m_downloadBar->setVisible(false);
+        hideExternalDownload();
     });
+}
+
+void BrowserWidget::showExternalDownload(const QString &name) {
+    m_downloadDisplayName = name;
+    m_downloadProgressBar->setRange(0, 0);
+    m_downloadProgressBar->setValue(0);
+    updateDownloadLabel(0, 0);
+    m_downloadBar->setVisible(true);
+}
+
+void BrowserWidget::updateExternalDownloadProgress(qint64 received, qint64 total) {
+    updateDownloadLabel(received, total);
+}
+
+void BrowserWidget::hideExternalDownload() {
+    m_downloadBar->setVisible(false);
+}
+
+void BrowserWidget::updateDownloadLabel(qint64 received, qint64 total) {
+    QString text;
+    if (total > 0) {
+        m_downloadProgressBar->setRange(0, 100);
+        m_downloadProgressBar->setValue(static_cast<int>((received * 100) / total));
+        text = tr("Downloading %1: %2 / %3")
+              .arg(m_downloadDisplayName, formatFileSize(received), formatFileSize(total));
+    } else if (received > 0) {
+        text = tr("Downloading %1: %2").arg(m_downloadDisplayName, formatFileSize(received));
+    } else {
+        text = tr("Downloading %1...").arg(m_downloadDisplayName);
+    }
+
+    const QFontMetrics metrics(m_downloadLabel->font());
+    m_downloadLabel->setText(metrics.elidedText(text, Qt::ElideMiddle, m_downloadLabel->maximumWidth()));
+    m_downloadLabel->setToolTip(text);
 }
 
 BrowserWidget::~BrowserWidget() {
@@ -202,9 +232,16 @@ void BrowserWidget::onDownloadRequested(QWebEngineDownloadRequest *download) {
         return;
     }
 
-    const QString suggested = download->downloadFileName().isEmpty()
-        ? QStringLiteral("download")
-        : download->downloadFileName();
+    // Fall back to the URL's filename, then a placeholder, if the site gave no suggested name.
+    QString suggested = download->downloadFileName();
+    if (suggested.isEmpty()) {
+        suggested = QFileInfo(download->url().path()).fileName();
+    }
+    if (suggested.isEmpty()) {
+        suggested = QStringLiteral("download");
+    }
+    qDebug() << "BrowserWidget: download requested, url:" << download->url()
+             << "suggested name:" << suggested;
     const QString path = generateTempDownloadPath(suggested);
     const QFileInfo info(path);
 

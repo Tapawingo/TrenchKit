@@ -30,6 +30,7 @@ public:
 
 signals:
     void addModRequested();
+    void browseModsRequested();
     void removeModRequested();
     void moveUpRequested();
     void moveDownRequested();
@@ -46,6 +47,7 @@ protected:
 
 private slots:
     void onAddModClicked();
+    void onBrowseModsClicked();
     void onRemoveModClicked();
     void onMoveUpClicked();
     void onMoveDownClicked();
@@ -65,6 +67,7 @@ private:
 
     QLabel *m_titleLabel = nullptr;
     QPushButton *m_addButton;
+    QPushButton *m_browseModsButton;
     QPushButton *m_removeButton;
     QPushButton *m_moveUpButton;
     QPushButton *m_moveDownButton;

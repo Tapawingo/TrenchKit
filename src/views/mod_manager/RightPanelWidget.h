@@ -37,6 +37,7 @@ public:
 
 signals:
     void addModRequested();
+    void browseModsRequested();
     void removeModRequested();
     void moveUpRequested();
     void moveDownRequested();
