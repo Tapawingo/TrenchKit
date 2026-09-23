@@ -27,12 +27,13 @@ public:
      */
     static bool isValidInstallPath(const QString &path);
 
+    static constexpr int FOXHOLE_APP_ID = 505460; ///< Steam App ID for Foxhole.
+
 private:
     static QStringList getSteamLibraryPaths();
     static QString checkPath(const QString &basePath);
 
     static constexpr const char* STEAM_APP_PATH = "steamapps/common/Foxhole";
-    static constexpr int FOXHOLE_APP_ID = 505460; ///< Steam App ID for Foxhole.
 };
 
 #endif // FOXHOLEDETECTOR_H
