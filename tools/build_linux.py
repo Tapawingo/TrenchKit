@@ -53,7 +53,7 @@ def qt_install_script(qt_version: str, qt_dir: str) -> str:
             echo "==> Installing Qt {qt_version} into cache volume..."
             aqt install-qt linux desktop {qt_version} linux_gcc_64 \\
                 --outputdir /qt \\
-                -m qtwebsockets qtwebengine qtwebchannel qtpositioning
+                -m qtwebsockets qtwebengine qtwebchannel qtpositioning qtserialport
             echo "==> Qt installed."
         fi
     """)

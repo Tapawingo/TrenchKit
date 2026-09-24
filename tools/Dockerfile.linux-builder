@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-dev libssl-dev \
     libglib2.0-0 \
     libfontconfig1-dev libfreetype6-dev libdbus-1-dev \
-    libxcb-cursor0 libxkbcommon-x11-0 \
+    libxcb-cursor0 libxkbcommon-x11-0 libxkbfile1 \
     libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
     libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
     libxcb-xinerama0 libxcb-xfixes0 libxcb-sync1 libxcb-util1 \

@@ -40,7 +40,7 @@ package-release-require-installer: configure-release
 	python tools/package_release.py --build-dir $(BUILD_DIR_RELEASE) --require-installer
 
 package-linux-release:
-	python tools/build_linux.py $(BUILD_LINUX_ARGS)
+	python3 tools/build_linux.py $(BUILD_LINUX_ARGS)
 
 test: test-debug
 
